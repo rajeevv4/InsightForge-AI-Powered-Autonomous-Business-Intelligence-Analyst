@@ -10,6 +10,12 @@ __pycache__/
 venv/
 env/
 
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
 # Data directory (keep raw structure, exclude large csv downloads from git tracking)
 data/raw/*.csv
 data/processed/*.csv
