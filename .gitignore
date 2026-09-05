@@ -1,0 +1,22 @@
+# Environment files
+.env
+*.env
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Data directory (keep raw structure, exclude large csv downloads from git tracking)
+data/raw/*.csv
+data/processed/*.csv
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Operating System & IDE
+.DS_Store
+.vscode/
+.idea/
