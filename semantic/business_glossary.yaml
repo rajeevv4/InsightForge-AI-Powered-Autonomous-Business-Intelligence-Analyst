@@ -1,0 +1,327 @@
+# InsightForge — Business Glossary Foundation
+# Controlled business definitions for E-Commerce analytics metrics, entities, and statuses.
+
+revenue:
+  name: Revenue
+  definition: Financial monetary value generated from customer purchases on fulfilled (delivered) orders.
+  source:
+    tables:
+      - order_items
+      - orders
+    columns:
+      - order_items.price
+      - order_items.freight_value
+      - orders.order_status
+  calculation: SUM(order_items.price + order_items.freight_value) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - sales
+    - gross revenue
+    - total revenue
+  notes: Includes both product sale prices and customer shipping charges. Strictly scoped to delivered orders.
+
+product_revenue:
+  name: Product Revenue
+  definition: Net sales value generated exclusively from item merchandise sales on delivered orders.
+  source:
+    tables:
+      - order_items
+      - orders
+    columns:
+      - order_items.price
+      - orders.order_status
+  calculation: SUM(order_items.price) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - merchandise sales
+    - product sales
+    - item revenue
+  notes: Excludes freight shipping charges. Canonical benchmark value is R$ 13,221,498.11.
+
+freight_revenue:
+  name: Freight Revenue
+  definition: Total shipping charges collected from customers for order fulfillment and delivery.
+  source:
+    tables:
+      - order_items
+      - orders
+    columns:
+      - order_items.freight_value
+      - orders.order_status
+  calculation: SUM(order_items.freight_value) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - shipping revenue
+    - shipping fees
+    - freight fees
+  notes: Canonical benchmark value is R$ 2,198,275.64.
+
+gross_revenue:
+  name: Gross Revenue
+  definition: Total cash flow collected from customers, combining product price revenue and freight delivery charges.
+  source:
+    tables:
+      - order_items
+      - orders
+    columns:
+      - order_items.price
+      - order_items.freight_value
+      - orders.order_status
+  calculation: SUM(order_items.price + order_items.freight_value) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - total sales
+    - top line revenue
+    - total gross sales
+  notes: Product Revenue + Freight Revenue = Gross Revenue (R$ 15,419,773.75).
+
+delivered_orders:
+  name: Delivered Orders
+  definition: Total count of unique customer orders that completed the fulfillment pipeline and were successfully delivered.
+  source:
+    tables:
+      - orders
+    columns:
+      - orders.order_id
+      - orders.order_status
+  calculation: COUNT(DISTINCT orders.order_id) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - completed orders
+    - fulfilled orders
+    - order volume
+  notes: Filter condition orders.order_status = 'delivered' is mandatory for financial KPIs. Canonical value is 96,478.
+
+active_customers:
+  name: Active Customers
+  definition: Count of distinct unique customer individuals who placed at least one delivered purchase order.
+  source:
+    tables:
+      - customers
+      - orders
+    columns:
+      - customers.customer_unique_id
+      - orders.order_status
+  calculation: COUNT(DISTINCT customers.customer_unique_id) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - unique customers
+    - purchasing customers
+    - active buyers
+  notes: Distinct on customer_unique_id (not customer_id order session keys). Canonical value is 93,358.
+
+units_sold:
+  name: Units Sold
+  definition: Total quantity of individual merchandise items sold across all delivered orders.
+  source:
+    tables:
+      - order_items
+      - orders
+    columns:
+      - order_items.order_item_id
+      - orders.order_status
+  calculation: COUNT(order_items.order_item_id) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - items sold
+    - total units
+    - sales quantity
+  notes: Canonical benchmark value is 110,197 items.
+
+average_order_value:
+  name: Average Order Value (AOV)
+  definition: The average financial gross value spent per delivered customer transaction order.
+  source:
+    tables:
+      - view_order_level_summary
+      - order_items
+      - orders
+    columns:
+      - order_items.price
+      - order_items.freight_value
+      - orders.order_id
+  calculation: gross_revenue / delivered_orders
+  synonyms:
+    - aov
+    - average basket size
+    - mean order value
+  notes: Canonical benchmark value is R$ 159.83 per order (15,419,773.75 / 96,478).
+
+customer_satisfaction:
+  name: Customer Satisfaction (CSAT)
+  definition: Mean rating score provided by customers in post-purchase review surveys on a 1.0 to 5.0 scale.
+  source:
+    tables:
+      - order_reviews
+      - orders
+    columns:
+      - order_reviews.review_score
+      - orders.order_status
+  calculation: AVG(order_reviews.review_score) WHERE orders.order_status = 'delivered'
+  synonyms:
+    - csat
+    - customer rating
+    - average review score
+  notes: Computed via isolated query/CTE to avoid cartesian join fan-out multiplication. Canonical value is 4.16 / 5.0.
+
+on_time_delivery:
+  name: On-Time Delivery
+  definition: Fulfillment status indicating customer order doorstep arrival occurred on or prior to the estimated date.
+  source:
+    tables:
+      - orders
+    columns:
+      - orders.order_delivered_customer_date
+      - orders.order_estimated_delivery_date
+  calculation: order_delivered_customer_date <= order_estimated_delivery_date
+  synonyms:
+    - on time delivery
+    - prompt delivery
+    - met sla
+  notes: Part of delivery SLA analytics classification.
+
+delayed_delivery:
+  name: Delayed Delivery
+  definition: Fulfillment status indicating customer order doorstep arrival occurred after the estimated delivery date.
+  source:
+    tables:
+      - orders
+    columns:
+      - orders.order_delivered_customer_date
+      - orders.order_estimated_delivery_date
+  calculation: order_delivered_customer_date > order_estimated_delivery_date
+  synonyms:
+    - late deliveries
+    - delivery delay
+    - missed sla
+  notes: Delay duration in days calculated as order_delivered_customer_date - order_estimated_delivery_date.
+
+undelivered_orders:
+  name: Undelivered Orders
+  definition: Orders that have not reached customer doorstep (order_delivered_customer_date IS NULL).
+  source:
+    tables:
+      - orders
+    columns:
+      - orders.order_delivered_customer_date
+  calculation: orders.order_delivered_customer_date IS NULL
+  synonyms:
+    - pending delivery
+    - in transit orders
+    - undelivered
+  notes: Includes canceled, shipped, in-transit, or processing orders.
+
+revenue_share:
+  name: Revenue Share
+  definition: The percentage proportion of total company gross or product revenue contributed by a specific dimension slice.
+  source:
+    tables:
+      - order_items
+      - products
+      - customers
+    columns:
+      - order_items.price
+      - products.product_category_name_english
+      - customers.customer_state
+  calculation: (SUM(slice_revenue) / SUM(overall_company_revenue)) * 100
+  synonyms:
+    - revenue contribution pct
+    - share of revenue
+    - contribution percentage
+  notes: Evaluated over categories or regional states (must sum to ~100%).
+
+order:
+  name: Order
+  definition: Primary commercial purchase transaction initiated by a customer containing one or more merchandise items.
+  source:
+    tables:
+      - orders
+    columns:
+      - orders.order_id
+      - orders.customer_id
+      - orders.order_status
+      - orders.order_purchase_timestamp
+  calculation: N/A (Core Entity)
+  synonyms:
+    - purchase order
+    - transaction
+    - customer order
+  notes: Linked to customer session via customer_id. Header table grain is 1 row per order.
+
+customer:
+  name: Customer
+  definition: Individual consumer who browses the platform, places orders, and receives delivery in a specific Brazilian location.
+  source:
+    tables:
+      - customers
+    columns:
+      - customers.customer_id
+      - customers.customer_unique_id
+      - customers.customer_city
+      - customers.customer_state
+  calculation: N/A (Core Dimension Entity)
+  synonyms:
+    - buyer
+    - consumer
+    - client
+  notes: customer_id represents an order session; customer_unique_id identifies distinct natural persons.
+
+product:
+  name: Product
+  definition: Merchandise item listed in the e-commerce catalog with specific category translation, dimensions, and price.
+  source:
+    tables:
+      - products
+    columns:
+      - products.product_id
+      - products.product_category_name_english
+      - products.product_weight_g
+  calculation: N/A (Core Dimension Entity)
+  synonyms:
+    - item
+    - merchandise
+    - catalog item
+  notes: Uncategorized products (610 items) are preserved with default 'Uncategorized' label.
+
+seller:
+  name: Seller
+  definition: Independent merchant partner fulfilling customer line items and shipping products via logistics.
+  source:
+    tables:
+      - sellers
+    columns:
+      - sellers.seller_id
+      - sellers.seller_city
+      - sellers.seller_state
+  calculation: N/A (Core Dimension Entity)
+  synonyms:
+    - merchant
+    - vendor
+    - store
+  notes: Each line item in order_items specifies a seller_id.
+
+payment_method:
+  name: Payment Method
+  definition: Financial instrument used by the customer to settle the monetary balance of an order.
+  source:
+    tables:
+      - order_payments
+    columns:
+      - order_payments.payment_type
+      - order_payments.payment_installments
+      - order_payments.payment_value
+  calculation: N/A (Fact Dimension)
+  synonyms:
+    - payment type
+    - tender type
+    - payment instrument
+  notes: Types include credit_card, boleto, voucher, and debit_card. Orders can have split payment records.
+
+review_score:
+  name: Review Score
+  definition: Quantitative rating between 1 and 5 given by a customer assessing order satisfaction.
+  source:
+    tables:
+      - order_reviews
+    columns:
+      - order_reviews.review_score
+      - order_reviews.review_comment_message
+  calculation: N/A (Fact Attribute)
+  synonyms:
+    - rating
+    - star rating
+    - csat score
+  notes: Stored in order_reviews table. Multiple review entries per order can exist.

@@ -1,0 +1,140 @@
+# InsightForge — Machine-Readable Metric Definitions
+# Analytical KPI specifications for SQL engines, BI dashboards, and AI agents.
+
+gross_revenue:
+  metric_name: Gross Revenue
+  description: Total combined monetary revenue from product sales and freight delivery fees for all delivered orders.
+  formula: SUM(order_items.price + order_items.freight_value)
+  source_tables:
+    - order_items
+    - orders
+  source_columns:
+    - order_items.price
+    - order_items.freight_value
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: company / aggregate
+  unit: BRL (R$)
+  aggregation: SUM
+  canonical_value: 15419773.75
+
+product_revenue:
+  metric_name: Product Revenue
+  description: Total net revenue generated exclusively from product merchandise sales on delivered orders.
+  formula: SUM(order_items.price)
+  source_tables:
+    - order_items
+    - orders
+  source_columns:
+    - order_items.price
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: company / aggregate
+  unit: BRL (R$)
+  aggregation: SUM
+  canonical_value: 13221498.11
+
+freight_revenue:
+  metric_name: Freight Revenue
+  description: Total shipping fees collected from customers to fulfill delivered orders.
+  formula: SUM(order_items.freight_value)
+  source_tables:
+    - order_items
+    - orders
+  source_columns:
+    - order_items.freight_value
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: company / aggregate
+  unit: BRL (R$)
+  aggregation: SUM
+  canonical_value: 2198275.64
+
+delivered_orders:
+  metric_name: Delivered Orders
+  description: Total volume of unique completed customer orders delivered to destination.
+  formula: COUNT(DISTINCT orders.order_id)
+  source_tables:
+    - orders
+  source_columns:
+    - orders.order_id
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: order
+  unit: orders
+  aggregation: COUNT_DISTINCT
+  canonical_value: 96478
+
+active_customers:
+  metric_name: Active Customers
+  description: Count of unique individuals who placed at least one delivered purchase order.
+  formula: COUNT(DISTINCT customers.customer_unique_id)
+  source_tables:
+    - customers
+    - orders
+  source_columns:
+    - customers.customer_unique_id
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: customer
+  unit: customers
+  aggregation: COUNT_DISTINCT
+  canonical_value: 93358
+
+units_sold:
+  metric_name: Units Sold
+  description: Total physical quantity of merchandise items purchased across all delivered orders.
+  formula: COUNT(order_items.order_item_id)
+  source_tables:
+    - order_items
+    - orders
+  source_columns:
+    - order_items.order_item_id
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: item
+  unit: units
+  aggregation: COUNT
+  canonical_value: 110197
+
+aov:
+  metric_name: Average Order Value
+  description: Mean gross transaction revenue generated per delivered customer order.
+  formula: gross_revenue / delivered_orders
+  source_tables:
+    - view_order_level_summary
+    - order_items
+    - orders
+  source_columns:
+    - order_items.price
+    - order_items.freight_value
+    - orders.order_id
+  filters:
+    - orders.order_status = 'delivered'
+  grain: order
+  unit: BRL per order (R$/order)
+  aggregation: DERIVED (SUM / COUNT_DISTINCT)
+  canonical_value: 159.83
+
+csat:
+  metric_name: Customer Satisfaction Score
+  description: Average customer review feedback score for completed orders on a 1 to 5 scale.
+  formula: AVG(order_reviews.review_score)
+  source_tables:
+    - order_reviews
+    - orders
+  source_columns:
+    - order_reviews.review_score
+    - orders.order_status
+  filters:
+    - orders.order_status = 'delivered'
+  grain: review / order
+  unit: rating scale (1.0 - 5.0)
+  aggregation: AVG
+  canonical_value: 4.16

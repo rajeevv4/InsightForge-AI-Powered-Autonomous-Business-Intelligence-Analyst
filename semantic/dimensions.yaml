@@ -1,0 +1,134 @@
+# InsightForge — Analytical Dimensions Catalog
+# Business dimensions used for grouping, filtering, and slicing e-commerce metrics.
+
+date:
+  name: Purchase Date
+  source_table: orders
+  source_column: order_purchase_timestamp
+  description: Calendar date when the order was originally placed by the customer.
+  type: timestamp / date
+  allowed_values: ISO 8601 Timestamps (e.g. 2016-09-04 to 2018-10-17)
+
+month:
+  name: Sales Month
+  source_table: orders
+  source_column: order_purchase_timestamp
+  description: Truncated calendar month representing the billing/reporting period for MoM trend analysis.
+  type: date
+  allowed_values: First day of month formatted YYYY-MM-01 (e.g., 2017-01-01 to 2018-08-01)
+
+product_category:
+  name: Product Category
+  source_table: products
+  source_column: product_category_name_english
+  description: English localized product line category name from catalog.
+  type: string
+  allowed_values:
+    - bed_bath_table
+    - health_beauty
+    - sports_leisure
+    - furniture_decor
+    - computers_accessories
+    - housewares
+    - watches_gifts
+    - telephony
+    - garden_tools
+    - auto
+    - Uncategorized
+    - "... (71 total translated categories + Uncategorized)"
+
+customer_state:
+  name: Customer State
+  source_table: customers
+  source_column: customer_state
+  description: Two-letter state abbreviation code of the delivery destination in Brazil.
+  type: string (2 chars)
+  allowed_values:
+    - SP
+    - RJ
+    - MG
+    - RS
+    - PR
+    - SC
+    - BA
+    - DF
+    - ES
+    - GO
+    - PE
+    - CE
+    - PA
+    - MT
+    - MA
+    - MS
+    - PB
+    - RN
+    - PI
+    - AL
+    - SE
+    - TO
+    - RO
+    - AM
+    - AC
+    - AP
+    - RR
+
+seller:
+  name: Seller ID
+  source_table: sellers
+  source_column: seller_id
+  description: Unique 32-character hexadecimal merchant/seller identification key.
+  type: string (32 chars)
+  allowed_values: Valid 32-char hex string in sellers directory (e.g., 3504022defd2a5d44763acb9445529be)
+
+payment_type:
+  name: Payment Type
+  source_table: order_payments
+  source_column: payment_type
+  description: Financial transaction tender instrument used by the customer.
+  type: string
+  allowed_values:
+    - credit_card
+    - boleto
+    - voucher
+    - debit_card
+    - not_defined
+
+order_status:
+  name: Order Status
+  source_table: orders
+  source_column: order_status
+  description: Current commercial lifecycle state of the purchase order.
+  type: string
+  allowed_values:
+    - delivered
+    - shipped
+    - canceled
+    - unavailable
+    - invoiced
+    - processing
+    - created
+    - approved
+
+review_score:
+  name: Review Score
+  source_table: order_reviews
+  source_column: review_score
+  description: Integer star rating provided by customer in post-fulfillment survey.
+  type: integer (1 to 5)
+  allowed_values:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+
+delivery_status:
+  name: Delivery SLA Status
+  source_table: view_delivery_sla_performance
+  source_column: delivery_status
+  description: Evaluated SLA delivery performance outcome comparing actual delivery date to carrier estimate.
+  type: string
+  allowed_values:
+    - On-Time
+    - Delayed
+    - Undelivered

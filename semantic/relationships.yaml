@@ -1,0 +1,63 @@
+# InsightForge — Relational Schema Graph & Join Semantics
+# Documenting parent-child entity keys, cardinality, and Cartesian fan-out safety rules.
+
+relationships:
+  - parent_table: customers
+    child_table: orders
+    join_key: customer_id
+    relationship_type: one_to_many
+    notes: >
+      Each record in customers represents an order customer session.
+      A customer_id maps to exactly one order header in orders.
+      (Note: customer_unique_id tracks natural persons across multiple order sessions).
+
+  - parent_table: orders
+    child_table: order_items
+    join_key: order_id
+    relationship_type: one_to_many
+    notes: >
+      An order header can contain one or multiple item line records in order_items.
+      Primary key of order_items is composite: (order_id, order_item_id).
+
+  - parent_table: products
+    child_table: order_items
+    join_key: product_id
+    relationship_type: one_to_many
+    notes: >
+      Each product catalog entry can be purchased across multiple order item line rows.
+
+  - parent_table: sellers
+    child_table: order_items
+    join_key: seller_id
+    relationship_type: one_to_many
+    notes: >
+      Each seller merchant can fulfill multiple line items across different orders.
+
+  - parent_table: orders
+    child_table: order_payments
+    join_key: order_id
+    relationship_type: one_to_many
+    notes: >
+      An order can have multiple payment transaction splits (e.g., credit card + voucher).
+      Primary key of order_payments is composite: (order_id, payment_sequential).
+
+  - parent_table: orders
+    child_table: order_reviews
+    join_key: order_id
+    relationship_type: one_to_many
+    notes: >
+      An order can have one or more post-purchase review entries (547 orders in Olist dataset have >1 review).
+      Primary key of order_reviews is composite: (review_id, order_id).
+
+fan_out_rules:
+  critical_warning: >
+    DO NOT join order_reviews or order_payments directly to order_items in a single SQL query block.
+    Joining multiple 1-to-many child tables directly on order_id creates a Cartesian cross-product
+    that multiplies line item rows and artificially inflates financial revenue figures.
+  historical_incident: >
+    A naive join of order_items and order_reviews duplicated line items for multi-review orders,
+    inflating revenue from canonical R$ 15,419,773.75 to R$ 15,489,665.55 (R$ 69,891.80 inflation error).
+  safe_design_patterns:
+    - Use analytical view 'view_order_level_summary' which rolls up order_items prior to joining header attributes.
+    - Compute CSAT ratings in an isolated CTE or separate subquery before aggregating revenue.
+    - Use DISTINCT keyword or explicit GROUP BY on primary key grains when computing multi-table counts.
