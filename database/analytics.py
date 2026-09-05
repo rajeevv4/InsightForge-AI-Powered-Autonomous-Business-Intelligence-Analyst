@@ -42,21 +42,29 @@ def get_summary_kpis():
     """Retrieve overall company executive summary metrics for delivered orders."""
     engine = get_db_engine()
     sql = text(f"""
-        SELECT 
-            COUNT(DISTINCT o.order_id) AS total_delivered_orders,
-            COUNT(DISTINCT c.customer_unique_id) AS total_active_customers,
-            COUNT(oi.order_item_id) AS total_units_sold,
-            SUM(oi.price) AS total_product_revenue,
-            SUM(oi.freight_value) AS total_freight_revenue,
-            SUM(oi.price + oi.freight_value) AS total_gross_revenue,
-            ROUND(SUM(oi.price + oi.freight_value) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS average_order_value_aov,
-            ROUND(AVG(oi.price), 2) AS average_item_price,
-            ROUND(AVG(r.review_score), 2) AS average_csat_score
-        FROM {DB_SCHEMA}.orders o
-        JOIN {DB_SCHEMA}.customers c ON o.customer_id = c.customer_id
-        JOIN {DB_SCHEMA}.order_items oi ON o.order_id = oi.order_id
-        LEFT JOIN {DB_SCHEMA}.order_reviews r ON o.order_id = r.order_id
-        WHERE o.order_status = 'delivered';
+        WITH sales AS (
+            SELECT 
+                COUNT(DISTINCT o.order_id) AS total_delivered_orders,
+                COUNT(DISTINCT c.customer_unique_id) AS total_active_customers,
+                COUNT(oi.order_item_id) AS total_units_sold,
+                SUM(oi.price) AS total_product_revenue,
+                SUM(oi.freight_value) AS total_freight_revenue,
+                SUM(oi.price + oi.freight_value) AS total_gross_revenue,
+                ROUND(SUM(oi.price + oi.freight_value) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS average_order_value_aov,
+                ROUND(AVG(oi.price), 2) AS average_item_price
+            FROM {DB_SCHEMA}.orders o
+            JOIN {DB_SCHEMA}.customers c ON o.customer_id = c.customer_id
+            JOIN {DB_SCHEMA}.order_items oi ON o.order_id = oi.order_id
+            WHERE o.order_status = 'delivered'
+        ),
+        reviews AS (
+            SELECT ROUND(AVG(r.review_score), 2) AS average_csat_score
+            FROM {DB_SCHEMA}.order_reviews r
+            JOIN {DB_SCHEMA}.orders o ON r.order_id = o.order_id
+            WHERE o.order_status = 'delivered'
+        )
+        SELECT s.*, r.average_csat_score
+        FROM sales s, reviews r;
     """)
     with engine.connect() as conn:
         df = pd.read_sql(sql, conn)

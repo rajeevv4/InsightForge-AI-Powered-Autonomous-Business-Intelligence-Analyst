@@ -33,14 +33,22 @@ class TestInsightForgeAnalytics(unittest.TestCase):
         cls.kpis = get_summary_kpis()
 
     def test_revenue_consistency(self):
-        """Assert direct sum of prices matches gross order view sum without fan-out distortion."""
-        gross_rev = self.kpis['total_gross_revenue']
-        prod_rev = self.kpis['total_product_revenue']
-        freight_rev = self.kpis['total_freight_revenue']
+        """Assert direct sum of prices matches canonical gross revenue without fan-out distortion."""
+        gross_rev = float(self.kpis['total_gross_revenue'])
+        prod_rev = float(self.kpis['total_product_revenue'])
+        freight_rev = float(self.kpis['total_freight_revenue'])
+        delivered_orders = int(self.kpis['total_delivered_orders'])
+        units_sold = int(self.kpis['total_units_sold'])
         
         # Product + Freight must equal Gross Revenue
-        self.assertAlmostEqual(float(prod_rev) + float(freight_rev), float(gross_rev), places=2)
-        self.assertGreater(float(gross_rev), 0.0)
+        self.assertAlmostEqual(prod_rev + freight_rev, gross_rev, places=2)
+        
+        # Validate canonical InsightForge values exactly
+        self.assertAlmostEqual(prod_rev, 13221498.11, places=2)
+        self.assertAlmostEqual(freight_rev, 2198275.64, places=2)
+        self.assertAlmostEqual(gross_rev, 15419773.75, places=2)
+        self.assertEqual(delivered_orders, 96478)
+        self.assertEqual(units_sold, 110197)
 
     def test_aov_calculation(self):
         """Assert AOV equals Gross Revenue divided by Total Delivered Orders."""
@@ -50,6 +58,7 @@ class TestInsightForgeAnalytics(unittest.TestCase):
         actual_aov = float(self.kpis['average_order_value_aov'])
         
         self.assertEqual(actual_aov, expected_aov)
+        self.assertEqual(actual_aov, 159.83)
 
     def test_category_contribution_sum(self):
         """Assert sum of category contribution percentages equals ~100%."""

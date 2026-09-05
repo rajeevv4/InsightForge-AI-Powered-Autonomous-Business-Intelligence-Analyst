@@ -79,11 +79,15 @@ python database/test_analytics.py
 
 ---
 
-## 📊 Business Metric Definitions
+## 📊 Canonical Business Metric Definitions
 
-- **Product Revenue**: `SUM(order_items.price)` for delivered orders (`R$ 13,279,836.59`).
-- **Freight Revenue**: `SUM(order_items.freight_value)` for delivered orders (`R$ 2,209,828.96`).
-- **Gross Revenue**: `SUM(price + freight_value)` for delivered orders (`R$ 15,489,665.55`).
-- **Average Order Value (AOV)**: `Gross Revenue / Total Delivered Orders` (`R$ 160.55`).
-- **Customer Satisfaction (CSAT)**: Mean review rating (`4.08 / 5.0`).
-- **On-Time Delivery SLA**: `% of orders delivered on or before estimated date` (`91.88%`).
+- **Product Revenue**: `SUM(order_items.price)` for delivered orders (**`R$ 13,221,498.11`**).
+- **Freight Revenue**: `SUM(order_items.freight_value)` for delivered orders (**`R$ 2,198,275.64`**).
+- **Gross Revenue**: `SUM(price + freight_value)` for delivered orders (**`R$ 15,419,773.75`**).
+- **Delivered Orders**: Total delivered e-commerce orders (**`96,478`**).
+- **Units Sold**: Total items purchased across delivered orders (**`110,197`**).
+- **Average Order Value (AOV)**: `Gross Revenue / Total Delivered Orders` (**`R$ 159.83`**).
+- **Customer Satisfaction (CSAT)**: Mean review rating (**`4.16 / 5.0`**).
+- **On-Time Delivery SLA**: `% of orders delivered on or before estimated date` (**`91.88%`**).
+
+*Note: All line-item revenue metrics strictly enforce fan-out join multiplication protection to eliminate revenue duplication from multi-review or multi-payment orders.*
