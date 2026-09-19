@@ -8,7 +8,8 @@ import {
   SellerItem,
   DeliverySLAItem,
   PaymentItem,
-  DataQualityResponse
+  DataQualityResponse,
+  AskAIResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
@@ -18,7 +19,7 @@ const client = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 15000,
 });
 
 export const api = {
@@ -66,4 +67,10 @@ export const api = {
     const res = await client.get<DataQualityResponse>('/data-quality');
     return res.data;
   },
+
+  askAI: async (question: string): Promise<AskAIResponse> => {
+    const res = await client.post<AskAIResponse>('/ai/ask', { question });
+    return res.data;
+  },
 };
+

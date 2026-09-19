@@ -93,3 +93,31 @@ python backend/tests/test_api.py
 | `/api/analytics/payments` | `GET` | Payment method distribution (credit card, boleto, voucher, debit card) and installments |
 | `/api/analytics/delivery` | `GET` | Fulfillment SLA breakdown (`On-Time`, `Delayed`, `Undelivered`) and delay days |
 | `/api/data-quality` | `GET` | Automated 10-check data quality audit findings and join safety status |
+
+---
+
+## 🧠 Semantic Layer & Documentation
+
+- [semantic/business_glossary.yaml](file:///Users/rajeev/Major%20Project-%20InsightForge/semantic/business_glossary.yaml) — Business Glossary (19 terms)
+- [semantic/metrics.yaml](file:///Users/rajeev/Major%20Project-%20InsightForge/semantic/metrics.yaml) — KPI Metric Specifications (8 metrics)
+- [semantic/dimensions.yaml](file:///Users/rajeev/Major%20Project-%20InsightForge/semantic/dimensions.yaml) — Analytical Dimensions Catalog (9 dimensions)
+- [semantic/relationships.yaml](file:///Users/rajeev/Major%20Project-%20InsightForge/semantic/relationships.yaml) — Join Graph & Fan-Out Safety Rules
+- [docs/semantic_layer.md](file:///Users/rajeev/Major%20Project-%20InsightForge/docs/semantic_layer.md) — Semantic Layer Architecture Guide
+- [docs/ai_integration.md](file:///Users/rajeev/Major%20Project-%20InsightForge/docs/ai_integration.md) — Initial AI Integration & Grounded Architecture Guide
+
+---
+
+## 🤖 Initial AI Capability — "Ask InsightForge"
+
+InsightForge features an initial AI-powered natural-language query capability ("Ask InsightForge"):
+
+- **Natural Language Query**: Users can ask business questions like *"Which category generated the highest revenue?"*, *"What is our average order value?"*, or *"How is our delivery performance?"*.
+- **Intent Classification**: Uses Google Gemini (`gemini-2.5-flash`) via the official `google-genai` SDK to classify questions into allow-listed intents.
+- **Controlled Analytics Router**: Intent is routed to existing validated PostgreSQL analytics functions. No arbitrary SQL is generated or executed by the LLM.
+- **Evidence-Grounded Explanations**: Explanations are generated strictly based on real retrieved PostgreSQL evidence.
+- **Security & Privacy**: Gemini API keys (`GEMINI_API_KEY`) remain strictly on the backend.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/ai/ask` | `POST` | Process natural language question, classify intent, fetch PostgreSQL evidence, and return grounded explanation |
+

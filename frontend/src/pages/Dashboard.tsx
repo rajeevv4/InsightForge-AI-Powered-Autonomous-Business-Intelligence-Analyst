@@ -31,6 +31,7 @@ import { SellerChart } from '../components/SellerChart';
 import { PaymentChart } from '../components/PaymentChart';
 import { DeliveryChart } from '../components/DeliveryChart';
 import { DataQualityCard } from '../components/DataQualityCard';
+import { AskInsightForge } from '../components/AskInsightForge';
 
 export const Dashboard: React.FC = () => {
   // Global States
@@ -204,7 +205,13 @@ export const Dashboard: React.FC = () => {
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
         
+        {/* Section 0: Ask InsightForge AI Assistant */}
+        <section>
+          <AskInsightForge />
+        </section>
+
         {/* Executive KPI Cards Grid */}
+
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white tracking-tight">Executive Business KPIs</h2>

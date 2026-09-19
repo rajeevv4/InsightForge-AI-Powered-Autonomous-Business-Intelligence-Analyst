@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.config import settings
-from backend.app.routers import health, kpis, analytics, data_quality
+from backend.app.routers import health, kpis, analytics, data_quality, ai
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -36,6 +36,7 @@ app.include_router(health.router, prefix=settings.API_PREFIX)
 app.include_router(kpis.router, prefix=settings.API_PREFIX)
 app.include_router(analytics.router, prefix=settings.API_PREFIX)
 app.include_router(data_quality.router, prefix=settings.API_PREFIX)
+app.include_router(ai.router, prefix=settings.API_PREFIX)
 
 @app.get("/")
 def root():

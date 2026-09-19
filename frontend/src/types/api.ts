@@ -90,3 +90,25 @@ export interface DataQualityResponse {
   join_safety_status: string;
   anomalies_flagged: string[];
 }
+
+export interface AskAIRequest {
+  question: string;
+}
+
+export interface AIEvidence {
+  source: string;
+  intent: string;
+  metric: string;
+  data: any;
+}
+
+export interface AskAIResponse {
+  question: string;
+  intent: string;
+  confidence: number;
+  reason: string;
+  answer: string;
+  evidence?: AIEvidence | null;
+  rephrase_suggested?: boolean;
+}
+

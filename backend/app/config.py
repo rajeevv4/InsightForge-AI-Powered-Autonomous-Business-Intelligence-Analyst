@@ -18,5 +18,9 @@ class Settings:
     DB_SCHEMA: str = os.getenv("DB_SCHEMA", "insightforge")
     
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"]
+    
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 settings = Settings()
+
