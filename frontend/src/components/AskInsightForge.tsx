@@ -9,7 +9,8 @@ import {
   ChevronUp,
   HelpCircle,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 import { api } from '../services/api';
 import { AskAIResponse } from '../types/api';
@@ -59,6 +60,21 @@ export const AskInsightForge: React.FC = () => {
     }
   };
 
+  // Safe inline formatter for **bold** text without using dangerouslySetInnerHTML
+  const renderFormattedText = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <strong key={index} className="font-semibold text-cyan-300">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm transition-all">
       {/* Header Section */}
@@ -70,12 +86,13 @@ export const AskInsightForge: React.FC = () => {
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
               Ask InsightForge
-              <span className="text-xs bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-2.5 py-0.5 rounded-full font-medium">
-                Gemini 2.5 Flash
+              <span className="text-[11px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-2.5 py-0.5 rounded-full font-medium">
+                Powered by Gemini 2.5 Flash
               </span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Natural-language analytics engine • Grounded strictly in validated PostgreSQL data
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              Grounded in validated PostgreSQL analytics
             </p>
           </div>
         </div>
@@ -208,16 +225,10 @@ export const AskInsightForge: React.FC = () => {
             <div className="prose prose-invert max-w-none text-sm leading-relaxed bg-slate-900/40 p-4 rounded-xl border border-slate-800/50">
               {response.answer.split('\n').map((line, idx) => {
                 if (!line.trim()) return <div key={idx} className="h-2" />;
-                
-                // Format bold markers simple render
-                const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                
                 return (
-                  <p
-                    key={idx}
-                    className="mb-2 last:mb-0"
-                    dangerouslySetInnerHTML={{ __html: formattedLine }}
-                  />
+                  <p key={idx} className="mb-2 last:mb-0">
+                    {renderFormattedText(line)}
+                  </p>
                 );
               })}
             </div>
