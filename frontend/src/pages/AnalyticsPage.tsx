@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useLocation } from 'react-router-dom';
 import {
   TrendingUp,
   ShoppingBag,
@@ -29,9 +29,36 @@ import { DeliveryChart } from '../components/DeliveryChart';
 
 type SectionTab = 'all' | 'revenue' | 'products' | 'geography' | 'sellers' | 'payments' | 'delivery';
 
-export const AnalyticsPage: React.FC = () => {
+interface AnalyticsPageProps {
+  initialTab?: SectionTab;
+}
+
+export const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ initialTab }) => {
+  const location = useLocation();
   const outletContext = useOutletContext<{ refreshTrigger?: number }>();
-  const [activeTab, setActiveTab] = useState<SectionTab>('all');
+
+  const getInitialTab = (): SectionTab => {
+    if (initialTab) return initialTab;
+    const searchParams = new URLSearchParams(location.search);
+    const tabParam = searchParams.get('tab') as SectionTab;
+    if (tabParam && ['all', 'revenue', 'products', 'geography', 'sellers', 'payments', 'delivery'].includes(tabParam)) {
+      return tabParam;
+    }
+    // Handle path matching if loaded as alias
+    if (location.pathname === '/products') return 'products';
+    if (location.pathname === '/geography' || location.pathname === '/customers') return 'geography';
+    if (location.pathname === '/sellers') return 'sellers';
+    if (location.pathname === '/payments') return 'payments';
+    if (location.pathname === '/delivery') return 'delivery';
+
+    return 'all';
+  };
+
+  const [activeTab, setActiveTab] = useState<SectionTab>(getInitialTab());
+
+  useEffect(() => {
+    setActiveTab(getInitialTab());
+  }, [location.pathname, location.search]);
 
   const [revenueTrend, setRevenueTrend] = useState<MonthlyTrendItem[] | null>(null);
   const [categories, setCategories] = useState<CategoryItem[] | null>(null);
@@ -113,32 +140,32 @@ export const AnalyticsPage: React.FC = () => {
   }, [loadAnalyticsData, outletContext?.refreshTrigger]);
 
   const tabs: { id: SectionTab; label: string; icon: React.FC<{ className?: string }> }[] = [
-    { id: 'all', label: 'All Analytics', icon: Layers },
-    { id: 'revenue', label: 'Revenue', icon: TrendingUp },
-    { id: 'products', label: 'Products', icon: ShoppingBag },
-    { id: 'geography', label: 'Geography', icon: MapPin },
+    { id: 'all', label: 'All Sections', icon: Layers },
+    { id: 'revenue', label: 'Revenue Trends', icon: TrendingUp },
+    { id: 'products', label: 'Products & Categories', icon: ShoppingBag },
+    { id: 'geography', label: 'Geography & Customers', icon: MapPin },
     { id: 'sellers', label: 'Sellers', icon: Store },
     { id: 'payments', label: 'Payments', icon: CreditCard },
-    { id: 'delivery', label: 'Delivery', icon: Truck },
+    { id: 'delivery', label: 'Delivery SLA', icon: Truck },
   ];
 
   return (
     <div className="space-y-8 pb-12">
       {/* Page Heading */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">Business Analytics</h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Explore deep operational dimensions across revenue trends, merchandise categories, geography, merchant fulfillment, and payment methods.
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Business Analytics Workspace</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Detailed performance breakdown across revenue trends, merchandise categories, geographic customer states, merchants, and logistics.
           </p>
         </div>
       </div>
 
-      {/* Category Section Filter Tabs */}
+      {/* Segmented Filter Navigation Tabs */}
       <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none">
-        <div className="flex items-center space-x-1 text-xs text-slate-400 mr-2 font-medium">
-          <Filter className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Category Filter:</span>
+        <div className="flex items-center space-x-1 text-xs text-slate-500 mr-2 font-semibold">
+          <Filter className="w-3.5 h-3.5 text-indigo-600" />
+          <span>View Section:</span>
         </div>
         {tabs.map((t) => {
           const Icon = t.icon;
@@ -149,25 +176,30 @@ export const AnalyticsPage: React.FC = () => {
               onClick={() => setActiveTab(t.id)}
               className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
                 isActive
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80 hover:border-slate-300'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
+              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
               <span>{t.label}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Analytics Sections */}
+      {/* Categorized Sections */}
       <div className="space-y-8">
-        {/* SECTION 1 — Revenue */}
+        {/* Revenue Section */}
         {(activeTab === 'all' || activeTab === 'revenue') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <TrendingUp className="w-4 h-4 text-cyan-400" />
-              <h2>SECTION 1 — Monthly Revenue Performance</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-indigo-600" />
+                Revenue & Sales Trends
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Monthly gross revenue performance, order volume growth, and average order value trends.
+              </p>
             </div>
             <RevenueTrendChart
               data={revenueTrend}
@@ -178,12 +210,17 @@ export const AnalyticsPage: React.FC = () => {
           </section>
         )}
 
-        {/* SECTION 2 — Products */}
+        {/* Products Section */}
         {(activeTab === 'all' || activeTab === 'products') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <ShoppingBag className="w-4 h-4 text-emerald-400" />
-              <h2>SECTION 2 — Top Product Categories</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-emerald-600" />
+                Products & Category Breakdown
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Top product categories ranked by revenue contribution percentage and item quantity sold.
+              </p>
             </div>
             <CategoryChart
               data={categories}
@@ -194,12 +231,17 @@ export const AnalyticsPage: React.FC = () => {
           </section>
         )}
 
-        {/* SECTION 3 — Geography */}
+        {/* Geography Section */}
         {(activeTab === 'all' || activeTab === 'geography') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <MapPin className="w-4 h-4 text-blue-400" />
-              <h2>SECTION 3 — State Sales Distribution</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-blue-600" />
+                Geographic Sales Distribution
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                State-level sales volume, active purchasing customer density, and freight revenue distribution.
+              </p>
             </div>
             <StateChart
               data={states}
@@ -210,12 +252,17 @@ export const AnalyticsPage: React.FC = () => {
           </section>
         )}
 
-        {/* SECTION 4 — Sellers */}
+        {/* Sellers Section */}
         {(activeTab === 'all' || activeTab === 'sellers') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <Store className="w-4 h-4 text-purple-400" />
-              <h2>SECTION 4 — Top Seller Performance</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Store className="w-4 h-4 text-purple-600" />
+                Seller & Merchant Performance
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Merchant order fulfillment volume, catalog assortment size, sales revenue, and customer ratings.
+              </p>
             </div>
             <SellerChart
               data={sellers}
@@ -226,12 +273,17 @@ export const AnalyticsPage: React.FC = () => {
           </section>
         )}
 
-        {/* SECTION 5 — Payments */}
+        {/* Payments Section */}
         {(activeTab === 'all' || activeTab === 'payments') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <CreditCard className="w-4 h-4 text-amber-400" />
-              <h2>SECTION 5 — Payment Method Distribution</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-amber-600" />
+                Payment Method Breakdown
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Distribution of credit card, boleto, voucher, and debit payment values and installment plans.
+              </p>
             </div>
             <PaymentChart
               data={payments}
@@ -242,12 +294,17 @@ export const AnalyticsPage: React.FC = () => {
           </section>
         )}
 
-        {/* SECTION 6 — Delivery */}
+        {/* Delivery Section */}
         {(activeTab === 'all' || activeTab === 'delivery') && (
           <section className="space-y-3">
-            <div className="flex items-center space-x-2 text-sm font-bold text-white tracking-tight">
-              <Truck className="w-4 h-4 text-indigo-400" />
-              <h2>SECTION 6 — Delivery SLA Performance</h2>
+            <div className="border-b border-slate-200/60 pb-2">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Truck className="w-4 h-4 text-indigo-600" />
+                Delivery SLA Performance
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Logistics timeliness, on-time vs delayed shipment rates, and carrier delivery day averages.
+              </p>
             </div>
             <DeliveryChart
               data={deliverySLA}

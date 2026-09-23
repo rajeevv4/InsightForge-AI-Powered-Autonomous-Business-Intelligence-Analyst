@@ -31,25 +31,32 @@ export const StateChart: React.FC<StateChartProps> = ({
   const topStates = data.slice(0, 10);
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-5 shadow-lg shadow-black/20">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">Regional Sales Performance</h2>
-          <p className="text-xs text-slate-400">Gross revenue and customer concentration across Brazilian states</p>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">Regional Sales Performance</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Gross revenue concentration across top Brazilian customer states</p>
         </div>
       </div>
 
       <div className="h-[280px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={topStates} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis dataKey="state" stroke="#64748B" fontSize={11} tickLine={false} />
             <YAxis stroke="#64748B" fontSize={11} tickLine={false} tickFormatter={(v) => `R$${(v / 1000000).toFixed(1)}M`} />
             <Tooltip
-              contentStyle={{ backgroundColor: '#0F172A', borderColor: '#334155', borderRadius: '0.5rem', color: '#F8FAFC', fontSize: '12px' }}
+              contentStyle={{
+                backgroundColor: '#FFFFFF',
+                borderColor: '#E2E8F0',
+                borderRadius: '0.75rem',
+                color: '#0F172A',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
+                fontSize: '12px'
+              }}
               formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Gross Revenue']}
             />
-            <Bar dataKey="total_gross_revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="total_gross_revenue" fill="#2563EB" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

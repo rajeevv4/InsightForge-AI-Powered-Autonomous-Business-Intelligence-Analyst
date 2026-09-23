@@ -34,25 +34,32 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
   }));
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-5 shadow-lg shadow-black/20">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">Top Product Categories</h2>
-          <p className="text-xs text-slate-400">Revenue contribution % and unit sales by English category</p>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">Top Product Categories</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Revenue contribution and sales volume by merchandise category</p>
         </div>
       </div>
 
       <div className="h-[280px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={formattedData} layout="vertical" margin={{ top: 5, right: 20, left: 40, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" horizontal={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
             <XAxis type="number" stroke="#64748B" fontSize={11} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-            <YAxis dataKey="formattedCategory" type="category" stroke="#94A3B8" fontSize={11} width={110} tickLine={false} />
+            <YAxis dataKey="formattedCategory" type="category" stroke="#475569" fontSize={11} width={110} tickLine={false} />
             <Tooltip
-              contentStyle={{ backgroundColor: '#0F172A', borderColor: '#334155', borderRadius: '0.5rem', color: '#F8FAFC', fontSize: '12px' }}
+              contentStyle={{
+                backgroundColor: '#FFFFFF',
+                borderColor: '#E2E8F0',
+                borderRadius: '0.75rem',
+                color: '#0F172A',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
+                fontSize: '12px'
+              }}
               formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Revenue']}
             />
-            <Bar dataKey="total_revenue" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="total_revenue" fill="#4F46E5" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -44,22 +44,19 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex antialiased font-sans">
       {/* Sidebar Navigation */}
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-      {/* Main Content Area */}
+      {/* Main Content Container */}
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64">
         {/* Top Header */}
         <Header
-          health={health}
-          loading={globalLoading}
-          onRefresh={handleRefresh}
           onOpenMobileMenu={() => setMobileOpen(true)}
         />
 
-        {/* Page Content */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Page Content View */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Outlet context={{ health, globalLoading, refreshData: handleRefresh, refreshTrigger }} />
         </main>
       </div>

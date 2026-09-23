@@ -4,11 +4,17 @@ import {
   LayoutDashboard,
   Sparkles,
   BarChart3,
+  Users,
+  ShoppingBag,
+  MapPin,
+  Store,
+  CreditCard,
+  Truck,
   ShieldCheck,
-  Lightbulb,
   Settings,
+  HelpCircle,
   X,
-  Zap
+  Layers
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,62 +25,54 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
   const location = useLocation();
 
-  const navItems = [
-    {
-      name: 'Overview',
-      path: '/',
-      icon: LayoutDashboard,
-      disabled: false,
-    },
-    {
-      name: 'Ask InsightForge',
-      path: '/ask',
-      icon: Sparkles,
-      disabled: false,
-      badge: 'AI',
-    },
-    {
-      name: 'Analytics',
-      path: '/analytics',
-      icon: BarChart3,
-      disabled: false,
-    },
-    {
-      name: 'Data Quality',
-      path: '/data-quality',
-      icon: ShieldCheck,
-      disabled: false,
-    },
-    {
-      name: 'Insights',
-      path: '#',
-      icon: Lightbulb,
-      disabled: true,
-      badge: 'Soon',
-    },
-    {
-      name: 'Settings',
-      path: '#',
-      icon: Settings,
-      disabled: true,
-      badge: 'Soon',
-    },
+  const mainNavItems = [
+    { name: 'Overview', path: '/', icon: LayoutDashboard },
+    { name: 'Ask InsightForge', path: '/ask', icon: Sparkles },
+    { name: 'Analytics', path: '/analytics', icon: BarChart3 },
+    { name: 'Customers', path: '/customers', icon: Users },
+    { name: 'Products', path: '/products', icon: ShoppingBag },
+    { name: 'Geography', path: '/geography', icon: MapPin },
+    { name: 'Sellers', path: '/sellers', icon: Store },
+    { name: 'Payments', path: '/payments', icon: CreditCard },
+    { name: 'Delivery', path: '/delivery', icon: Truck },
+    { name: 'Data Quality', path: '/data-quality', icon: ShieldCheck },
   ];
 
+  const bottomNavItems = [
+    { name: 'Settings', path: '/settings', icon: Settings },
+    { name: 'Help & Info', path: '/help', icon: HelpCircle },
+  ];
+
+  const isItemActive = (path: string) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
+  };
+
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-slate-950 border-r border-slate-800 text-slate-100 w-64 select-none">
-      {/* Brand Logo Header */}
-      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/80">
-        <NavLink to="/" className="flex items-center space-x-3 group" onClick={() => setMobileOpen(false)}>
-          <div className="p-2 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-            <Zap className="w-5 h-5 text-white" />
+    <div className="flex flex-col h-full bg-white border-r border-slate-200/80 text-slate-700 w-64 select-none">
+      {/* Brand Header */}
+      <div className="h-16 flex items-center justify-between px-5 border-b border-slate-100">
+        <NavLink
+          to="/"
+          className="flex items-center space-x-3 group"
+          onClick={() => setMobileOpen(false)}
+        >
+          {/* Abstract I/F Geometric Data Emblem */}
+          <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-sm group-hover:bg-indigo-700 transition-colors">
+            <svg
+              className="w-5 h-5 fill-current"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M4 4h4v16H4V4zm6 6h4v10h-4V10zm6-4h4v14h-4V6z" />
+            </svg>
           </div>
           <div>
-            <span className="font-extrabold text-base tracking-tight text-white group-hover:text-cyan-400 transition-colors">
+            <span className="font-extrabold text-base tracking-tight text-slate-900 group-hover:text-indigo-600 transition-colors">
               InsightForge
             </span>
-            <span className="block text-[10px] text-slate-400 font-mono tracking-wider uppercase">
-              BI Analyst
+            <span className="block text-[11px] text-slate-500 font-medium tracking-normal">
+              AI Business Analyst
             </span>
           </div>
         </NavLink>
@@ -82,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
         {/* Mobile Close Button */}
         <button
           onClick={() => setMobileOpen(false)}
-          className="lg:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+          className="lg:hidden text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100"
           aria-label="Close navigation sidebar"
         >
           <X className="w-5 h-5" />
@@ -90,82 +88,66 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
       </div>
 
       {/* Main Navigation Links */}
-      <div className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto">
-        <div className="px-3 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          Main Navigation
+      <div className="flex-1 py-5 px-3 space-y-1 overflow-y-auto">
+        <div className="px-3 pb-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+          Workspace Navigation
         </div>
 
-        {navItems.map((item) => {
+        {mainNavItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.path === '/'
-              ? location.pathname === '/'
-              : location.pathname.startsWith(item.path) && item.path !== '#';
-
-          if (item.disabled) {
-            return (
-              <div
-                key={item.name}
-                className="flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 cursor-not-allowed opacity-60"
-              >
-                <div className="flex items-center space-x-3">
-                  <Icon className="w-4 h-4 text-slate-600" />
-                  <span className="text-sm font-medium">{item.name}</span>
-                </div>
-                {item.badge && (
-                  <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-0.5 rounded font-mono font-medium">
-                    {item.badge}
-                  </span>
-                )}
-              </div>
-            );
-          }
+          const active = isItemActive(item.path);
 
           return (
             <NavLink
               key={item.name}
               to={item.path}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                isActive
-                  ? 'bg-slate-900 text-cyan-400 border border-slate-800 shadow-md shadow-cyan-950/20'
-                  : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
+              className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                active
+                  ? 'bg-indigo-50/80 text-indigo-600 font-semibold border-r-2 border-indigo-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <Icon
-                  className={`w-4 h-4 transition-colors ${
-                    isActive ? 'text-cyan-400' : 'text-slate-400 group-hover:text-slate-300'
-                  }`}
-                />
-                <span>{item.name}</span>
-              </div>
-              {item.badge && (
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold ${
-                    isActive
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  {item.badge}
-                </span>
-              )}
+              <Icon
+                className={`w-4 h-4 transition-colors ${
+                  active ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'
+                }`}
+              />
+              <span>{item.name}</span>
             </NavLink>
           );
         })}
       </div>
 
-      {/* Footer Info */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-950/60 text-xs text-slate-400 font-mono">
-        <div className="flex items-center justify-between">
-          <span>Engine Status</span>
-          <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Online
-          </span>
+      {/* Bottom Navigation Section */}
+      <div className="p-3 border-t border-slate-100 space-y-1 bg-slate-50/50">
+        <div className="px-3 pb-1.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+          System & Support
         </div>
-        <div className="text-[10px] text-slate-500 mt-1">Olist E-Commerce Analytics</div>
+        {bottomNavItems.map((item) => {
+          const Icon = item.icon;
+          const active = isItemActive(item.path);
+
+          return (
+            <NavLink
+              key={item.name}
+              to={item.path}
+              onClick={() => setMobileOpen(false)}
+              className={`flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                active
+                  ? 'bg-indigo-50/80 text-indigo-600 font-semibold border-r-2 border-indigo-600'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
+              }`}
+            >
+              <Icon
+                className={`w-4 h-4 ${
+                  active ? 'text-indigo-600' : 'text-slate-400'
+                }`}
+              />
+              <span>{item.name}</span>
+            </NavLink>
+          );
+        })}
       </div>
     </div>
   );
@@ -180,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
       {/* Mobile Backdrop Overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}

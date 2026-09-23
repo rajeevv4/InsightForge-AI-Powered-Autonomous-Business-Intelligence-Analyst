@@ -18,7 +18,7 @@ interface PaymentChartProps {
   onRetry?: () => void;
 }
 
-const COLORS = ['#38BDF8', '#818CF8', '#F59E0B', '#34D399'];
+const COLORS = ['#4F46E5', '#0284C7', '#D97706', '#059669'];
 
 export const PaymentChart: React.FC<PaymentChartProps> = ({
   data,
@@ -37,11 +37,11 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
   }));
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-5 shadow-lg shadow-black/20">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">Payment Method Distribution</h2>
-          <p className="text-xs text-slate-400">Gross transaction values and average installment plans</p>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">Payment Method Distribution</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Gross transaction values and installment breakdown</p>
         </div>
       </div>
 
@@ -58,11 +58,18 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
               dataKey="value"
             >
               {formattedData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#0F172A" strokeWidth={2} />
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#FFFFFF" strokeWidth={2} />
               ))}
             </Pie>
             <Tooltip
-              contentStyle={{ backgroundColor: '#0F172A', borderColor: '#334155', borderRadius: '0.5rem', color: '#F8FAFC', fontSize: '12px' }}
+              contentStyle={{
+                backgroundColor: '#FFFFFF',
+                borderColor: '#E2E8F0',
+                borderRadius: '0.75rem',
+                color: '#0F172A',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
+                fontSize: '12px'
+              }}
               formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Total Value']}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />

@@ -6,15 +6,16 @@ interface KpiCardProps {
   value: string | number;
   subtitle?: string;
   icon: LucideIcon;
-  color?: 'blue' | 'emerald' | 'amber' | 'purple' | 'slate';
+  color?: 'blue' | 'emerald' | 'amber' | 'purple' | 'indigo' | 'slate';
 }
 
 const colorStyles = {
-  blue: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
-  emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-  amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-  purple: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-  slate: 'text-slate-300 bg-slate-800/40 border-slate-700/40'
+  blue: 'text-blue-600 bg-blue-50 border-blue-100',
+  emerald: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+  amber: 'text-amber-600 bg-amber-50 border-amber-100',
+  purple: 'text-purple-600 bg-purple-50 border-purple-100',
+  indigo: 'text-indigo-600 bg-indigo-50 border-indigo-100',
+  slate: 'text-slate-600 bg-slate-100 border-slate-200'
 };
 
 export const KpiCard: React.FC<KpiCardProps> = ({
@@ -22,19 +23,25 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   value,
   subtitle,
   icon: Icon,
-  color = 'blue'
+  color = 'indigo'
 }) => {
   return (
-    <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-5 hover:border-slate-700/80 transition shadow-lg shadow-black/20">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-5 hover:shadow-md transition-all shadow-xs flex flex-col justify-between">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</span>
-        <div className={`p-2.5 rounded-lg border ${colorStyles[color]}`}>
-          <Icon className="w-5 h-5" />
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{title}</span>
+        <div className={`p-2 rounded-xl border ${colorStyles[color]}`}>
+          <Icon className="w-4 h-4" />
         </div>
       </div>
-      <div className="mt-3">
-        <span className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-mono">{value}</span>
-        {subtitle && <p className="text-xs text-slate-400 mt-1 font-medium">{subtitle}</p>}
+      <div className="mt-4">
+        <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+          {value}
+        </div>
+        {subtitle && (
+          <p className="text-xs text-slate-500 mt-1 font-medium">
+            {subtitle}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -30,7 +30,6 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
   if (loading) return <LoadingSpinner message="Loading monthly revenue trends..." />;
   if (error || !data) return <ErrorBanner message={error || 'Failed to load revenue trend'} onRetry={onRetry} />;
 
-  // Filter valid dataset & format months
   const formattedData = data.map((d) => ({
     ...d,
     displayMonth: new Date(d.month).toLocaleDateString('en-US', { year: '2-digit', month: 'short' }),
@@ -38,11 +37,11 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
   }));
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800/80 rounded-xl p-5 shadow-lg shadow-black/20">
-      <div className="flex items-center justify-between mb-4">
+    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-lg font-bold text-white tracking-tight">Monthly Revenue Performance</h2>
-          <p className="text-xs text-slate-400">Gross revenue trends and order volume with MoM growth rates</p>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">Revenue Trend</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Monthly gross sales revenue and fulfilled order volume</p>
         </div>
       </div>
 
@@ -51,15 +50,15 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
           <ComposedChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#38BDF8" stopOpacity={0.4} />
-                <stop offset="95%" stopColor="#38BDF8" stopOpacity={0.0} />
+                <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#4F46E5" stopOpacity={0.0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis dataKey="displayMonth" stroke="#64748B" fontSize={11} tickLine={false} />
             <YAxis
               yAxisId="left"
-              stroke="#38BDF8"
+              stroke="#4F46E5"
               fontSize={11}
               tickLine={false}
               tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
@@ -67,27 +66,34 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
             <YAxis
               yAxisId="right"
               orientation="right"
-              stroke="#818CF8"
+              stroke="#94A3B8"
               fontSize={11}
               tickLine={false}
               tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
             />
             <Tooltip
-              contentStyle={{ backgroundColor: '#0F172A', borderColor: '#334155', borderRadius: '0.5rem', color: '#F8FAFC', fontSize: '12px' }}
+              contentStyle={{
+                backgroundColor: '#FFFFFF',
+                borderColor: '#E2E8F0',
+                borderRadius: '0.75rem',
+                color: '#0F172A',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                fontSize: '12px'
+              }}
               formatter={(val: any, name: string) => {
                 if (name === 'Gross Revenue') return [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name];
                 if (name === 'Delivered Orders') return [`${Number(val).toLocaleString()} orders`, name];
                 return [val, name];
               }}
             />
-            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-            <Bar yAxisId="right" dataKey="total_orders" name="Delivered Orders" fill="#6366F1" opacity={0.6} radius={[4, 4, 0, 0]} />
+            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
+            <Bar yAxisId="right" dataKey="total_orders" name="Delivered Orders" fill="#CBD5E1" opacity={0.7} radius={[4, 4, 0, 0]} />
             <Area
               yAxisId="left"
               type="monotone"
               dataKey="gross_revenue"
               name="Gross Revenue"
-              stroke="#38BDF8"
+              stroke="#4F46E5"
               strokeWidth={2.5}
               fillOpacity={1}
               fill="url(#revenueGrad)"
