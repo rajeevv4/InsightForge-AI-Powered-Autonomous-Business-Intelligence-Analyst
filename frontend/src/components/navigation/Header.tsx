@@ -148,17 +148,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
           {/* User Profile Avatar */}
           <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-200/80">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-semibold text-xs flex items-center justify-center shadow-xs">
-              RK
+              IF
             </div>
             <div className="hidden xl:block text-left">
               <span className="block text-xs font-bold text-slate-900 leading-tight">
-                Rajeev Karakoti
+                InsightForge Team
               </span>
               <span className="block text-[10px] text-slate-500 leading-tight">
-                Lead BI Analyst
+                Analytics Workspace
               </span>
             </div>
           </div>
+
 
         </div>
 

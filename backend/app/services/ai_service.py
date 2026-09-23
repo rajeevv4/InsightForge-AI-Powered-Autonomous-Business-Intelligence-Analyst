@@ -192,7 +192,7 @@ User Question: "{question}"
             orders = top.get("total_orders", 0)
             return (
                 f"Based on PostgreSQL analytics, the product category generating the highest revenue is **{cat_name}** "
-                f"with **R$ {rev:,.2f}** in total revenue ({share:.2f}% of total revenue across {orders:,} orders). "
+                f"with **₹ {rev:,.2f}** in total revenue ({share:.2f}% of total revenue across {orders:,} orders). "
                 f"The top 3 categories overall are {', '.join([d.get('category', '').replace('_', ' ').title() for d in data[:3]])}."
             )
 
@@ -205,9 +205,9 @@ User Question: "{question}"
             csat = data.get("csat", 0)
             return (
                 f"Here is our executive KPI summary from validated PostgreSQL records:\n"
-                f"• **Gross Revenue**: R$ {gross:,.2f} (Product: R$ {prod:,.2f}, Freight: R$ {freight:,.2f})\n"
+                f"• **Gross Revenue**: ₹ {gross:,.2f} (Product: ₹ {prod:,.2f}, Freight: ₹ {freight:,.2f})\n"
                 f"• **Delivered Orders**: {orders:,} completed orders\n"
-                f"• **Average Order Value (AOV)**: R$ {aov:,.2f}\n"
+                f"• **Average Order Value (AOV)**: ₹ {aov:,.2f}\n"
                 f"• **Customer Satisfaction (CSAT)**: {csat:.2f} / 5.0"
             )
 
@@ -218,7 +218,7 @@ User Question: "{question}"
             share = top_state.get("revenue_share_percent", 0)
             cust = top_state.get("active_customers", 0)
             return (
-                f"Customer state **{st}** generates the highest sales volume, contributing **R$ {rev:,.2f}** "
+                f"Customer state **{st}** generates the highest sales volume, contributing **₹ {rev:,.2f}** "
                 f"({share:.2f}% of total gross revenue) from {cust:,} active purchasing customers."
             )
 
@@ -240,7 +240,7 @@ User Question: "{question}"
             p_val = top_pay.get("total_payment_value", 0)
             return (
                 f"The most common payment method is **{p_type}**, used in {p_count:,} orders "
-                f"totaling **R$ {p_val:,.2f}** in transaction value."
+                f"totaling **₹ {p_val:,.2f}** in transaction value."
             )
 
         elif intent == "revenue_trend" and isinstance(data, list) and len(data) > 0:
@@ -250,7 +250,7 @@ User Question: "{question}"
             orders = latest.get("total_orders", 0)
             return (
                 f"Monthly revenue trend analytics cover {len(data)} consecutive months. "
-                f"In the most recent recorded month ({m}), total gross revenue reached **R$ {rev:,.2f}** "
+                f"In the most recent recorded month ({m}), total gross revenue reached **₹ {rev:,.2f}** "
                 f"across {orders:,} fulfilled orders."
             )
 
@@ -260,7 +260,7 @@ User Question: "{question}"
             s_rev = top_s.get("total_sales_revenue", 0)
             s_orders = top_s.get("total_orders_fulfilled", 0)
             return (
-                f"Top seller (ID prefix: `{s_id}...`) generated **R$ {s_rev:,.2f}** in sales revenue "
+                f"Top seller (ID prefix: `{s_id}...`) generated **₹ {s_rev:,.2f}** in sales revenue "
                 f"fulfilling {s_orders:,} customer orders."
             )
 

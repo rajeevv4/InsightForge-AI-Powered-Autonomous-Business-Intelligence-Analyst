@@ -44,7 +44,7 @@ export const StateChart: React.FC<StateChartProps> = ({
           <BarChart data={topStates} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
             <XAxis dataKey="state" stroke="#64748B" fontSize={11} tickLine={false} />
-            <YAxis stroke="#64748B" fontSize={11} tickLine={false} tickFormatter={(v) => `R$${(v / 1000000).toFixed(1)}M`} />
+            <YAxis stroke="#64748B" fontSize={11} tickLine={false} tickFormatter={(v) => `₹${(v / 1000000).toFixed(1)}M`} />
             <Tooltip
               contentStyle={{
                 backgroundColor: '#FFFFFF',
@@ -54,7 +54,7 @@ export const StateChart: React.FC<StateChartProps> = ({
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
                 fontSize: '12px'
               }}
-              formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Gross Revenue']}
+              formatter={(val: any) => [`₹ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Gross Revenue']}
             />
             <Bar dataKey="total_gross_revenue" fill="#2563EB" radius={[4, 4, 0, 0]} />
           </BarChart>

@@ -36,8 +36,8 @@ export const SettingsPage: React.FC = () => {
           <div className="space-y-1.5">
             <label className="font-semibold text-slate-700">Currency Formatting</label>
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium flex items-center justify-between">
-              <span>Brazilian Real (R$)</span>
-              <span className="text-slate-500 text-[11px]">BRL</span>
+              <span>Indian Rupee (₹)</span>
+              <span className="text-slate-500 text-[11px]">INR</span>
             </div>
           </div>
         </div>

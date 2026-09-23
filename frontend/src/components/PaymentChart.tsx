@@ -70,7 +70,7 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
                 fontSize: '12px'
               }}
-              formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Total Value']}
+              formatter={(val: any) => [`₹ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Total Value']}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
           </PieChart>

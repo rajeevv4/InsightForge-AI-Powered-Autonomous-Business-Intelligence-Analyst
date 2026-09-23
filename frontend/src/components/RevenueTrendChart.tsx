@@ -61,7 +61,7 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
               stroke="#4F46E5"
               fontSize={11}
               tickLine={false}
-              tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+              tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
             />
             <YAxis
               yAxisId="right"
@@ -81,11 +81,12 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
                 fontSize: '12px'
               }}
               formatter={(val: any, name: string) => {
-                if (name === 'Gross Revenue') return [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name];
+                if (name === 'Gross Revenue') return [`₹${Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, name];
                 if (name === 'Delivered Orders') return [`${Number(val).toLocaleString()} orders`, name];
                 return [val, name];
               }}
             />
+
             <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
             <Bar yAxisId="right" dataKey="total_orders" name="Delivered Orders" fill="#CBD5E1" opacity={0.7} radius={[4, 4, 0, 0]} />
             <Area

@@ -86,7 +86,7 @@ export const OverviewPage: React.FC = () => {
   }, [loadOverviewData, outletContext?.refreshTrigger]);
 
   const fmtCurr = (val: number | undefined) =>
-    val !== undefined ? `R$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+    val !== undefined ? `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
   const fmtNum = (val: number | undefined) => (val !== undefined ? val.toLocaleString() : '—');
 
   return (
@@ -94,12 +94,13 @@ export const OverviewPage: React.FC = () => {
       {/* Welcome & Subtitle */}
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-          Welcome back, Rajeev 👋
+          Welcome back 👋
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Explore your business performance and discover meaningful insights from your data.
         </p>
       </div>
+
 
       {/* Hero Banner */}
       <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 rounded-2xl p-6 sm:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">

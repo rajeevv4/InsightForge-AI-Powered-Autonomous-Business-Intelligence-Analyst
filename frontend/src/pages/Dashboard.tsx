@@ -193,8 +193,9 @@ export const Dashboard: React.FC = () => {
 
   // Format Helper
   const fmtCurr = (val: number | undefined) =>
-    val !== undefined ? `R$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+    val !== undefined ? `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
   const fmtNum = (val: number | undefined) => (val !== undefined ? val.toLocaleString() : '—');
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-16">
