@@ -1,7 +1,7 @@
 # InsightForge — AI-Powered Autonomous Business Intelligence Analyst
 
 > **B.Tech Major Project**  
-> **Author & Lead Developer**: **Rajeev Karakoti**  
+> **Author & Lead Developer**: **Rajeev Karakoti** , **Priyanshu Saklani**, **Prasanna Godiyal**
 > **Status**: Verified Steps 1–7 Complete (Mid-Viva Ready Scope)
 
 ---
@@ -16,7 +16,7 @@ Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 1
 
 ## 👤 Author & Project Credits
 
-- **Developer & Architect**: **Rajeev Karakoti**
+- **Developer & Architect**: **Rajeev Karakoti** , **Priyanshu Saklani**, **Prasanna Godiyal**
 - **Project Type**: B.Tech Major Project — Autonomous BI & AI Analytics System
 - **Dataset**: Olist Brazilian E-Commerce Dataset (~100,000 orders, 9 core tables)
 - **Repository**: [InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst](https://github.com/rajeevv4/InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst)
@@ -213,5 +213,5 @@ npm run build
 
 ## 📄 License & Credits
 
-Developed by **Rajeev Karakoti** for the B.Tech Major Project.  
+Developed by **Rajeev Karakoti** , **Priyanshu Saklani**, **Prasanna Godiyal** for the B.Tech Major Project.  
 Powered by PostgreSQL, FastAPI, React, TailwindCSS, and Google Gemini API.
