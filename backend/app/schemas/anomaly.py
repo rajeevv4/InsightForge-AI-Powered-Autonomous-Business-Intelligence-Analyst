@@ -17,6 +17,7 @@ class AnomalyItem(BaseModel):
     direction: AnomalyDirection = Field(..., description="Direction of deviation (spike or drop)")
     method: AnomalyMethod = Field(..., description="Detection algorithm employed")
     known_event_candidate: Optional[str] = Field(None, description="Known calendar/promotional event candidate (e.g. Black Friday 2017)")
+    classification: Optional[str] = Field(None, description="Neutral event classification: known event or statistical_outlier")
 
 
 class AnomalyTimeSeriesPoint(BaseModel):
@@ -35,6 +36,7 @@ class AnomalyListResponse(BaseModel):
     metric: str
     anomalies: List[AnomalyItem]
     time_series: List[AnomalyTimeSeriesPoint]
+    slice_outliers: List[AnomalyItem] = Field(default_factory=list, description="Dimension-slice outliers (e.g. regional state distribution)")
 
 
 class AnomalyScanRequest(BaseModel):
@@ -49,3 +51,4 @@ class AnomalyScanResponse(BaseModel):
     high_severity_count: int
     scanned_metrics: List[str]
     anomalies: List[AnomalyItem]
+    slice_outliers: List[AnomalyItem] = Field(default_factory=list, description="Dimension-slice outliers")

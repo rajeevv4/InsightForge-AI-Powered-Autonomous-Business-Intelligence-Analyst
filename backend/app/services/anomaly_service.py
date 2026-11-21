@@ -5,6 +5,7 @@ import uuid
 import threading
 import time
 from typing import List, Dict, Any, Optional, Tuple
+from collections import defaultdict
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -71,6 +72,10 @@ class AnomalyService:
     _series_cache: Dict[Tuple[str, str], Tuple[float, pd.DataFrame]] = {}  # (dataset_id, grain) -> (timestamp, df)
     _detect_cache: Dict[Tuple[str, str, str, Optional[str]], Tuple[float, Any]] = {}  # (dataset_id, grain, metric, severity) -> (timestamp, res)
     _cache_lock = threading.Lock()
+
+    RATIO_METRICS = {"aov", "on_time_delivery_rate", "avg_review_score"}
+    COLD_START_DAYS = 30
+    DEFAULT_MIN_ORDERS = 30
 
     @classmethod
     def clear_cache(cls, dataset_id: Optional[str] = None) -> None:
@@ -252,10 +257,25 @@ class AnomalyService:
         """
         Method (a): Rolling robust z-score using median and Median Absolute Deviation (MAD).
         Formula: z = 0.6745 * (x - median) / MAD
+        Filters out cold start (first 30 days) and small samples (< 30 orders) for ratio metrics.
         """
         series = df[metric].astype(float)
         periods = df["period"].tolist()
         anomalies: List[AnomalyItem] = []
+
+        # Cold start filtering: only apply if series has date column and length > cold start window
+        cold_cutoff = None
+        period_dates = None
+        date_col = "period_date" if "period_date" in df.columns else ("period" if "period" in df.columns else None)
+        if date_col is not None and len(df) >= 90:
+            try:
+                period_dates = pd.to_datetime(df[date_col])
+                cold_cutoff = period_dates.min() + pd.Timedelta(days=cls.COLD_START_DAYS)
+            except Exception:
+                cold_cutoff = None
+                period_dates = None
+
+        order_counts = df["order_count"].astype(int) if "order_count" in df.columns else None
 
         rolling_median = series.rolling(window=window, min_periods=max(3, window // 2), center=False).median()
         rolling_mad = series.rolling(window=window, min_periods=max(3, window // 2), center=False).apply(
@@ -264,6 +284,13 @@ class AnomalyService:
         )
 
         for i in range(len(series)):
+            # Cold start filtering
+            if cold_cutoff is not None and period_dates is not None and period_dates.iloc[i] < cold_cutoff:
+                continue
+            # Small sample filtering for ratio metrics
+            if metric in cls.RATIO_METRICS and order_counts is not None and order_counts.iloc[i] < cls.DEFAULT_MIN_ORDERS:
+                continue
+
             obs = float(series.iloc[i])
             med = float(rolling_median.iloc[i]) if not np.isnan(rolling_median.iloc[i]) else obs
             mad = float(rolling_mad.iloc[i]) if not np.isnan(rolling_mad.iloc[i]) else 0.0
@@ -275,10 +302,11 @@ class AnomalyService:
             abs_z = abs(z)
 
             if abs_z >= threshold:
-                severity = "high" if abs_z >= 4.0 else ("medium" if abs_z >= 3.0 else "low")
+                severity = "high" if abs_z >= 8.0 else ("medium" if abs_z >= 4.0 else "low")
                 direction = "spike" if z > 0 else "drop"
                 period_str = periods[i]
                 event = format_known_event(period_str)
+                classification = event if event else "statistical_outlier"
 
                 anomalies.append(AnomalyItem(
                     metric=metric,
@@ -290,7 +318,8 @@ class AnomalyService:
                     severity=severity,
                     direction=direction,
                     method="rolling_zscore",
-                    known_event_candidate=event
+                    known_event_candidate=event,
+                    classification=classification
                 ))
 
         return anomalies
@@ -306,6 +335,7 @@ class AnomalyService:
         """
         Method (b): STL Decomposition (Seasonal and Trend decomposition using Loess).
         Flags statistical outliers in the residual noise component.
+        Filters out cold start (first 30 days) and small samples (< 30 orders) for ratio metrics.
         """
         if not STL_AVAILABLE or len(df) < period * 2:
             return []
@@ -313,6 +343,19 @@ class AnomalyService:
         series = df[metric].astype(float)
         periods = df["period"].tolist()
         anomalies: List[AnomalyItem] = []
+
+        cold_cutoff = None
+        period_dates = None
+        date_col = "period_date" if "period_date" in df.columns else ("period" if "period" in df.columns else None)
+        if date_col is not None and len(df) >= 90:
+            try:
+                period_dates = pd.to_datetime(df[date_col])
+                cold_cutoff = period_dates.min() + pd.Timedelta(days=cls.COLD_START_DAYS)
+            except Exception:
+                cold_cutoff = None
+                period_dates = None
+
+        order_counts = df["order_count"].astype(int) if "order_count" in df.columns else None
 
         try:
             stl = STL(series, period=period, robust=True)
@@ -331,14 +374,22 @@ class AnomalyService:
             norm_resid = (resid - resid_median) / scale
 
             for i in range(len(series)):
+                # Cold start filtering
+                if cold_cutoff is not None and period_dates is not None and period_dates.iloc[i] < cold_cutoff:
+                    continue
+                # Small sample filtering for ratio metrics
+                if metric in cls.RATIO_METRICS and order_counts is not None and order_counts.iloc[i] < cls.DEFAULT_MIN_ORDERS:
+                    continue
+
                 score = float(norm_resid.iloc[i])
                 if abs(score) >= threshold:
                     obs = float(series.iloc[i])
                     exp = float(expected.iloc[i])
                     period_str = periods[i]
                     event = format_known_event(period_str)
+                    classification = event if event else "statistical_outlier"
 
-                    severity = "high" if abs(score) >= 4.0 else ("medium" if abs(score) >= 3.0 else "low")
+                    severity = "high" if abs(score) >= 8.0 else ("medium" if abs(score) >= 4.0 else "low")
                     direction = "spike" if score > 0 else "drop"
 
                     anomalies.append(AnomalyItem(
@@ -351,7 +402,8 @@ class AnomalyService:
                         severity=severity,
                         direction=direction,
                         method="stl_residual",
-                        known_event_candidate=event
+                        known_event_candidate=event,
+                        classification=classification
                     ))
         except Exception as e:
             logger.debug(f"STL decomposition skipped: {e}")
@@ -461,13 +513,28 @@ class AnomalyService:
             scores = -iso.score_samples(X)  # higher = more anomalous
 
             median_rev = float(df["gross_revenue"].median())
+            cold_cutoff = None
+            period_dates = None
+            date_col = "period_date" if "period_date" in df.columns else ("period" if "period" in df.columns else None)
+            if date_col is not None and len(df) >= 90:
+                try:
+                    period_dates = pd.to_datetime(df[date_col])
+                    cold_cutoff = period_dates.min() + pd.Timedelta(days=cls.COLD_START_DAYS)
+                except Exception:
+                    cold_cutoff = None
+                    period_dates = None
 
             for i in range(len(df)):
+                # Cold start filtering
+                if cold_cutoff is not None and period_dates is not None and period_dates.iloc[i] < cold_cutoff:
+                    continue
+
                 if preds[i] == -1:  # Outlier detected
                     score = float(scores[i])
                     obs_rev = float(df["gross_revenue"].iloc[i])
                     period_str = str(df["period"].iloc[i])
                     event = format_known_event(period_str)
+                    classification = event if event else "statistical_outlier"
 
                     direction = "spike" if obs_rev >= median_rev else "drop"
 
@@ -488,7 +555,8 @@ class AnomalyService:
                         severity=severity,
                         direction=direction,
                         method="isolation_forest",
-                        known_event_candidate=event
+                        known_event_candidate=event,
+                        classification=classification
                     ))
         except Exception as e:
             logger.debug(f"IsolationForest failed: {e}")
@@ -509,6 +577,7 @@ class AnomalyService:
         Execute ensemble anomaly detection methods, format time series points,
         and filter results by metric, grain, and severity.
         Cache key is scoped by (dataset_id, grain, metric, severity) for multi-tenant isolation.
+        Cold start excluded, small samples filtered, and dimension slice outliers separated.
         """
         cache_key = (dataset_id, grain, metric, severity)
         if df is None:
@@ -532,30 +601,62 @@ class AnomalyService:
         if iqr_anomalies is None:
             iqr_anomalies = cls.detect_iqr_dimension_slices(metric=target_metric)
 
-        # Collect periods flagged by z-score, STL, or IQR for multi-method confirmation
-        confirmed_periods = {a.period for a in (zscore_anomalies + stl_anomalies + iqr_anomalies)}
+        # Collect periods flagged by z-score or STL
+        confirmed_periods = {a.period for a in (zscore_anomalies + stl_anomalies)}
         iso_anomalies = cls.detect_isolation_forest(df, confirmed_periods=confirmed_periods) if grain == "daily" else []
 
-        # Combine and deduplicate
-        all_items: List[AnomalyItem] = []
-        seen_keys = set()
+        # Time-series items (excluding slice outliers)
+        time_series_items = zscore_anomalies + stl_anomalies + iso_anomalies
 
-        for item in (zscore_anomalies + stl_anomalies + iso_anomalies + iqr_anomalies):
+        # Method agreement and max deviation mapping for severity calibration
+        period_methods = defaultdict(set)
+        period_max_dev = defaultdict(float)
+        for a in time_series_items:
+            period_methods[a.period].add(a.method)
+            if abs(a.deviation_score) > abs(period_max_dev[a.period]):
+                period_max_dev[a.period] = a.deviation_score
+
+        # Calibrate severity and apply neutral labels
+        calibrated_items: List[AnomalyItem] = []
+        seen_keys = set()
+        for item in time_series_items:
             key = (item.metric, item.dimension, item.period)
             if key not in seen_keys:
                 seen_keys.add(key)
-                all_items.append(item)
+                m_count = len(period_methods[item.period])
+                dev_mag = abs(period_max_dev[item.period])
+
+                # Severity Calibration:
+                # High severity: Multi-method agreement (>= 2 methods) AND deviation >= 8.0,
+                # OR extreme deviation >= 12.0
+                if (m_count >= 2 and dev_mag >= 8.0) or (dev_mag >= 12.0):
+                    item.severity = "high"
+                elif (m_count >= 2 and dev_mag >= 2.5) or (dev_mag >= 4.0):
+                    item.severity = "medium"
+                else:
+                    item.severity = "low"
+
+                if item.known_event_candidate:
+                    item.classification = item.known_event_candidate
+                else:
+                    item.classification = "statistical_outlier"
+
+                calibrated_items.append(item)
+
+        # Label dimension slice outliers
+        for s in iqr_anomalies:
+            s.classification = "slice_outlier"
 
         # Filter by severity if specified
+        filtered_items = calibrated_items
         if severity and severity.lower() in ("high", "medium", "low"):
-            all_items = [a for a in all_items if a.severity.lower() == severity.lower()]
+            filtered_items = [a for a in calibrated_items if a.severity.lower() == severity.lower()]
 
-        # Sort anomalies by deviation score magnitude descending
-        all_items.sort(key=lambda x: abs(x.deviation_score), reverse=True)
+        filtered_items.sort(key=lambda x: abs(x.deviation_score), reverse=True)
 
         # 2. Build time series points for frontend recharts
         time_series_points: List[AnomalyTimeSeriesPoint] = []
-        anomaly_map = {a.period: a for a in all_items if a.dimension == "overall"}
+        anomaly_map = {a.period: a for a in filtered_items if a.dimension == "overall"}
 
         # Calculate smooth expected baseline (rolling 14-day median)
         series_vals = df[target_metric].astype(float)
@@ -579,11 +680,12 @@ class AnomalyService:
             ))
 
         response = AnomalyListResponse(
-            total_anomalies=len(all_items),
+            total_anomalies=len(filtered_items),
             grain=grain,
             metric=target_metric,
-            anomalies=all_items,
-            time_series=time_series_points
+            anomalies=filtered_items,
+            time_series=time_series_points,
+            slice_outliers=iqr_anomalies
         )
 
         with cls._cache_lock:
@@ -596,6 +698,7 @@ class AnomalyService:
         """
         Executes comprehensive multi-metric scan across business series.
         Fetches the time-series once and shares across all metrics.
+        Calibrates severity, applies neutral labels, and separates slice outliers.
         """
         scan_id = str(uuid.uuid4())[:8]
         target_metrics = metrics or ["gross_revenue", "order_count", "aov", "on_time_delivery_rate", "avg_review_score"]
@@ -610,21 +713,48 @@ class AnomalyService:
                 grain=grain,
                 metric=m,
                 df=df,
-                iqr_anomalies=iqr_slices if "revenue" in m else []
+                iqr_anomalies=[]  # Don't mix slice outliers into metric time series
             )
             all_detected.extend(res.anomalies)
 
-        # Deduplicate
+        # Multi-metric deduplication and cross-method severity calibration
+        period_methods = defaultdict(set)
+        period_max_dev = defaultdict(float)
+        for a in all_detected:
+            k_period = (a.metric, a.period)
+            period_methods[k_period].add(a.method)
+            if abs(a.deviation_score) > abs(period_max_dev[k_period]):
+                period_max_dev[k_period] = a.deviation_score
+
         seen = set()
         deduped = []
         for a in all_detected:
-            k = (a.metric, a.dimension, a.period, a.method)
+            k = (a.metric, a.dimension, a.period)
             if k not in seen:
                 seen.add(k)
+                k_period = (a.metric, a.period)
+                m_count = len(period_methods[k_period])
+                dev_mag = abs(period_max_dev[k_period])
+                if (m_count >= 2 and dev_mag >= 8.0) or (dev_mag >= 12.0):
+                    a.severity = "high"
+                elif (m_count >= 2 and dev_mag >= 2.5) or (dev_mag >= 4.0):
+                    a.severity = "medium"
+                else:
+                    a.severity = "low"
+
+                if a.known_event_candidate:
+                    a.classification = a.known_event_candidate
+                else:
+                    a.classification = "statistical_outlier"
+
                 deduped.append(a)
 
         deduped.sort(key=lambda x: abs(x.deviation_score), reverse=True)
         high_sev = sum(1 for a in deduped if a.severity == "high")
+
+        # Dimension slice outliers
+        for s in iqr_slices:
+            s.classification = "slice_outlier"
 
         return AnomalyScanResponse(
             scan_id=scan_id,
@@ -632,5 +762,6 @@ class AnomalyService:
             anomalies_detected=len(deduped),
             high_severity_count=high_sev,
             scanned_metrics=target_metrics,
-            anomalies=deduped
+            anomalies=deduped,
+            slice_outliers=iqr_slices
         )

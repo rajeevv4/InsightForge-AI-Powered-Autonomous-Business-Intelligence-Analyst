@@ -239,7 +239,7 @@ class TestTextToSQLServiceAndRouting(unittest.TestCase):
         mock_gemini = MagicMock()
         mock_response = MagicMock()
         mock_response.text = (
-            '{"sql": "SELECT c.customer_city, COUNT(o.order_id) AS order_count FROM orders o JOIN customers c ON o.customer_id = c.customer_id WHERE c.customer_state = \'PR\' GROUP BY c.customer_city ORDER BY order_count DESC LIMIT 10;", '
+            '{"sql": "SELECT c.customer_city, COUNT(o.order_id) AS order_count FROM orders o JOIN customers c ON o.customer_id = c.customer_id WHERE c.customer_state = \'PR\' AND o.order_status = \'delivered\' GROUP BY c.customer_city ORDER BY order_count DESC LIMIT 10;", '
             '"explanation": "Cities in PR state ranked by orders.", "assumptions": ["State PR"], "suggested_chart": "bar"}'
         )
         mock_gemini.models.generate_content.return_value = mock_response

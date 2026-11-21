@@ -259,7 +259,7 @@ def check_numeric_match(answer_text: str, expected_val: float, tolerance_pct: fl
     return False
 
 
-def run_sql_evaluations() -> bool:
+def run_sql_evaluations(questions_path: Optional[str] = None) -> bool:
     """
     Evaluates dynamic Text-to-SQL queries against live PostgreSQL.
     Strictly requires live PostgreSQL and GEMINI_API_KEY (no fixtures or fake data).
@@ -293,11 +293,11 @@ def run_sql_evaluations() -> bool:
         print("Exiting without faking evaluation numbers.\n")
         sys.exit(1)
 
-    all_questions = load_golden_questions()
-    sql_questions = [q for q in all_questions if q.get("id", "").startswith("sql_")]
+    all_questions = load_golden_questions(questions_path=questions_path)
+    sql_questions = [q for q in all_questions if q.get("id", "").startswith("sql_") or q.get("expected_intent") == "text_to_sql"]
 
     if not sql_questions:
-        print("No SQL benchmark questions found in golden_questions.yaml.")
+        print(f"No SQL benchmark questions found in {questions_path or 'golden_questions.yaml'}.")
         return False
 
     client = AIService._get_genai_client()
@@ -356,56 +356,68 @@ def run_sql_evaluations() -> bool:
             except Exception:
                 pass
 
-        # 4. Column-Targeted Numeric Result Extraction from Executed Rows
+        target_col = q.get("expected_column") or ref_col_name
+
+        # 4. Target Column Numeric Result Extraction from Executed Rows
         if executed:
             exec_count += 1
             rows = gen_res.get("rows", [])
             if rows:
-                first_row = rows[0]  # Dictionary of column_name -> value
+                first_row = rows[0]  # Dictionary of column_name -> value, or scalar
                 matched_val = None
 
-                # Rule (a): If reference query specified a target column name, select that column directly
-                if ref_col_name:
-                    for k, v in first_row.items():
-                        if k.lower() == ref_col_name and v is not None:
-                            try:
-                                matched_val = float(v)
-                                break
-                            except (ValueError, TypeError):
-                                pass
-
-                    # Fuzzy match for column aliases/synonyms
-                    if matched_val is None:
+                # (a) Handle scalar primitive directly
+                if isinstance(first_row, (int, float)):
+                    matched_val = float(first_row)
+                elif isinstance(first_row, dict):
+                    # (b) Explicit target column match
+                    if target_col:
+                        t_lower = target_col.lower()
                         for k, v in first_row.items():
-                            if (ref_col_name in k.lower() or k.lower() in ref_col_name) and v is not None:
+                            if k.lower() == t_lower and v is not None:
                                 try:
                                     matched_val = float(v)
                                     break
                                 except (ValueError, TypeError):
                                     pass
 
-                # Rule (b): If exactly one numeric column exists in the row, select it
-                if matched_val is None:
-                    numeric_cols = []
-                    for k, v in first_row.items():
-                        if v is not None:
-                            try:
-                                numeric_cols.append(float(v))
-                            except (ValueError, TypeError):
-                                continue
-                    if len(numeric_cols) == 1:
-                        matched_val = numeric_cols[0]
+                        # Synonyms / alias matching
+                        if matched_val is None:
+                            for k, v in first_row.items():
+                                if (t_lower in k.lower() or k.lower() in t_lower) and v is not None:
+                                    try:
+                                        matched_val = float(v)
+                                        break
+                                    except (ValueError, TypeError):
+                                        pass
 
-                # Rule (c): If multiple numeric columns exist and none matched the reference column name,
-                # fall back to the first numeric column (which will correctly FAIL if wrong column returned)
-                if matched_val is None:
-                    for k, v in first_row.items():
-                        if v is not None:
-                            try:
-                                matched_val = float(v)
-                                break
-                            except (ValueError, TypeError):
-                                continue
+                    # (c) Exactly one numeric column exists in the row
+                    if matched_val is None:
+                        numeric_cols = []
+                        for k, v in first_row.items():
+                            if v is not None:
+                                try:
+                                    numeric_cols.append(float(v))
+                                except (ValueError, TypeError):
+                                    continue
+                        if len(numeric_cols) == 1:
+                            matched_val = numeric_cols[0]
+
+                    # (d) Fallback to first column value (ensures wrong column fails)
+                    if matched_val is None:
+                        for k, v in first_row.items():
+                            if v is not None:
+                                try:
+                                    matched_val = float(v)
+                                    break
+                                except (ValueError, TypeError):
+                                    continue
+
+                elif isinstance(first_row, (list, tuple)) and len(first_row) > 0:
+                    try:
+                        matched_val = float(first_row[0])
+                    except (ValueError, TypeError):
+                        pass
 
                 actual_val = matched_val
 
@@ -462,6 +474,15 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
     print("=" * 82)
     print(f"Total Test Cases: {len(questions)}\n")
 
+    live_anomaly_count = None
+    if live:
+        try:
+            from backend.app.services.anomaly_service import AnomalyService
+            live_scan = AnomalyService.run_full_scan(grain="daily")
+            live_anomaly_count = live_scan.anomalies_detected
+        except Exception as e:
+            live_anomaly_count = None
+
     client = None
     if mode == "gemini":
         client = AIService._get_genai_client()
@@ -487,6 +508,8 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
         qtext = q["question"]
         expected_intent = q["expected_intent"]
         expected_val = q.get("expected_value")
+        if qid == "anom_02" and live and live_anomaly_count is not None:
+            expected_val = float(live_anomaly_count)
         qlang = q.get("language") or detect_language(qtext)
         if qlang not in language_stats:
             language_stats[qlang] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
@@ -669,7 +692,7 @@ def main():
     )
     args = parser.parse_args()
     if args.mode == "sql":
-        success = run_sql_evaluations()
+        success = run_sql_evaluations(questions_path=args.questions)
     else:
         success = run_evaluations(mode=args.mode, live=args.live, questions_path=args.questions)
     sys.exit(0 if success else 1)

@@ -174,6 +174,64 @@ class TestTimeoutsAndFallbacks(unittest.TestCase):
         match_correct = abs(matched_val_correct - expected_val) <= 0.05
         self.assertTrue(match_correct, "Target column matched by reference name must PASS accuracy check")
 
+    def test_sql_eval_wrong_scale_fails(self):
+        """
+        Negative test: A model query returning a fraction (0.0933) instead of
+        the expected percentage (9.33%) must FAIL the accuracy comparison.
+        """
+        expected_pct = 9.33
+        actual_fraction = 0.0933  # Wrong scale (fraction instead of percentage)
+
+        abs_diff = abs(actual_fraction - expected_pct)
+        rel_diff = abs_diff / abs(expected_pct)
+
+        match = abs_diff <= 0.05 or rel_diff <= 0.02
+        self.assertFalse(match, "Wrong scale (0.0933 vs 9.33) must FAIL accuracy check without loose tolerances")
+
+    # ------------------------------------------------------------------------
+    # Test (e): Text-to-SQL Business Rule Guard
+    # ------------------------------------------------------------------------
+    def test_sql_business_rule_guard_delivered_required(self):
+        """
+        Queries aggregating financial/order metrics from orders/order_items
+        without a delivered filter must be DENIED to trigger self-correction.
+        """
+        from backend.app.services.sql_validator import SQLValidator
+
+        # Missing delivered filter -> MUST FAIL
+        unfiltered_sql = "SELECT SUM(gross_order_amount) FROM view_order_level_summary WHERE EXTRACT(YEAR FROM order_purchase_timestamp) = 2017;"
+        is_valid, _, err = SQLValidator.validate(unfiltered_sql)
+        self.assertFalse(is_valid, "Financial query without delivered-status filter must be DENIED")
+        self.assertIn("Business rule violation", err)
+        self.assertIn("order_status = 'delivered'", err)
+
+        # Delivered filter included -> MUST PASS
+        delivered_sql = "SELECT SUM(gross_order_amount) FROM view_order_level_summary WHERE EXTRACT(YEAR FROM order_purchase_timestamp) = 2017 AND order_status = 'delivered';"
+        is_valid, sanitized, err = SQLValidator.validate(delivered_sql)
+        self.assertTrue(is_valid, f"Financial query with delivered filter must PASS: {err}")
+
+    def test_sql_business_rule_guard_legitimate_queries_not_blocked(self):
+        """
+        Legitimate non-financial queries, order status breakdowns, and canceled-status
+        queries must NOT be blocked by the delivered-status rule.
+        """
+        from backend.app.services.sql_validator import SQLValidator
+
+        # 1. Status breakdown (GROUP BY order_status)
+        status_breakdown = "SELECT order_status, COUNT(*) AS status_count FROM orders GROUP BY order_status;"
+        is_valid, _, err = SQLValidator.validate(status_breakdown)
+        self.assertTrue(is_valid, f"Order status breakdown grouping by order_status must PASS: {err}")
+
+        # 2. Canceled orders count (explicit non-delivered status query)
+        canceled_query = "SELECT COUNT(*) AS canceled_count FROM orders WHERE order_status = 'canceled';"
+        is_valid, _, err = SQLValidator.validate(canceled_query)
+        self.assertTrue(is_valid, f"Explicit canceled orders query must PASS: {err}")
+
+        # 3. Query against pre-filtered view (view_category_contribution already filters on delivered)
+        view_query = "SELECT category_name, total_revenue FROM view_category_contribution ORDER BY total_revenue DESC LIMIT 5;"
+        is_valid, _, err = SQLValidator.validate(view_query)
+        self.assertTrue(is_valid, f"Query on pre-filtered view must PASS: {err}")
+
     # ------------------------------------------------------------------------
     # Test (e): Cache Safety & Multi-Dataset Isolation
     # ------------------------------------------------------------------------

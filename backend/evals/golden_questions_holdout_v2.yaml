@@ -1,0 +1,194 @@
+# InsightForge Held-Out Multilingual Evaluation Dataset v2
+# 30 FRESH Held-Out Questions (10 Hindi, 10 Hinglish, 10 English)
+# STRICT RULE: Heuristics and prompts must NOT be tuned on this dataset.
+# v1 is now treated as a tuned set.
+
+questions:
+  # ----------------------------------------------------------------------------
+  # Hindi (Devanagari) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho2_hi_01
+    question: "ब्राजील के किस प्रांत में हमारे सबसे ज्यादा ग्राहक बसे हुए हैं?"
+    expected_intent: "state_analysis"
+    language: "hi"
+    description: "Hindi: State customer concentration"
+
+  - id: ho2_hi_02
+    question: "पूरे साल 2017 में महीने दर महीने बिक्री का ग्राफ कैसा रहा?"
+    expected_intent: "revenue_trend"
+    language: "hi"
+    description: "Hindi: Monthly sales trajectory"
+
+  - id: ho2_hi_03
+    question: "ग्राहकों के पार्सल समय पर पहुंच रहे हैं या लेट डिलीवरी हो रही है?"
+    expected_intent: "delivery_analysis"
+    language: "hi"
+    description: "Hindi: Delivery timeliness SLA"
+
+  - id: ho2_hi_04
+    question: "प्लेटफॉर्म पर सबसे ज्यादा माल बेचने वाला सप्लायर कौन है?"
+    expected_intent: "seller_analysis"
+    language: "hi"
+    description: "Hindi: Top supplier by sales"
+
+  - id: ho2_hi_05
+    question: "बोलेटो के मुकाबले कार्ड से कितना भुगतान हुआ है?"
+    expected_intent: "payment_analysis"
+    language: "hi"
+    description: "Hindi: Payment methods breakdown"
+
+  - id: ho2_hi_06
+    question: "कुल सकल आमदनी और पूरे बिजनेस का मुख्य केपीआई दिखाओ।"
+    expected_intent: "kpi_summary"
+    language: "hi"
+    description: "Hindi: Executive KPI totals"
+
+  - id: ho2_hi_07
+    question: "किस तरह के सामान से हमें सबसे ज्यादा मुनाफा और रेवेन्यू मिल रहा है?"
+    expected_intent: "category_analysis"
+    language: "hi"
+    description: "Hindi: Top revenue product category"
+
+  - id: ho2_hi_08
+    question: "क्या हमारे डेटाबेस में कोई लापता रिकॉर्ड या टूटे हुए लिंक हैं?"
+    expected_intent: "data_quality"
+    language: "hi"
+    description: "Hindi: Database integrity check"
+
+  - id: ho2_hi_09
+    question: "क्या किसी खास तारीख को बिक्री में कोई असामान्य उछाल देखा गया?"
+    expected_intent: "anomaly_detection"
+    language: "hi"
+    description: "Hindi: Abnormal sales spike inquiry"
+
+  - id: ho2_hi_10
+    question: "मुझे दिल्ली के मौसम का हाल बताओ आज कैसा है।"
+    expected_intent: "unknown"
+    language: "hi"
+    description: "Hindi out-of-scope: Weather in Delhi"
+
+  # ----------------------------------------------------------------------------
+  # Hinglish (Roman Script) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho2_hing_01
+    question: "bhai kaunse state se sabse zyada order place hue hain?"
+    expected_intent: "state_analysis"
+    language: "hinglish"
+    description: "Hinglish: Top order state"
+
+  - id: ho2_hing_02
+    question: "har mahine ki bikri ka trend graph kaisa chal raha hai?"
+    expected_intent: "revenue_trend"
+    language: "hinglish"
+    description: "Hinglish: Monthly sales trend"
+
+  - id: ho2_hing_03
+    question: "delivery ladke time par packet drop kar rahe hain ya late ho raha hai?"
+    expected_intent: "delivery_analysis"
+    language: "hinglish"
+    description: "Hinglish: Delivery SLA arrival"
+
+  - id: ho2_hing_04
+    question: "sabse zyada orders supply karne wala merchant partner kaun hai?"
+    expected_intent: "seller_analysis"
+    language: "hinglish"
+    description: "Hinglish: Top merchant seller"
+
+  - id: ho2_hing_05
+    question: "customers ne EMI ya installments mein kitna bhugtan kiya hai?"
+    expected_intent: "payment_analysis"
+    language: "hinglish"
+    description: "Hinglish: Installments payment analysis"
+
+  - id: ho2_hing_06
+    question: "overall business performance aur gross revenue ka data batao"
+    expected_intent: "kpi_summary"
+    language: "hinglish"
+    description: "Hinglish: Executive KPI totals"
+
+  - id: ho2_hing_07
+    question: "revenue ke hisab se hamari number one category kaunsi hai?"
+    expected_intent: "category_analysis"
+    language: "hinglish"
+    description: "Hinglish: Category revenue leadership"
+
+  - id: ho2_hing_08
+    question: "database mein foreign key constraints ya missing values ki audit report do"
+    expected_intent: "data_quality"
+    language: "hinglish"
+    description: "Hinglish: Database audit integrity"
+
+  - id: ho2_hing_09
+    question: "kya sales mein koi unpredicted spike ya outlier notice hua?"
+    expected_intent: "anomaly_detection"
+    language: "hinglish"
+    description: "Hinglish: Outlier spike query"
+
+  - id: ho2_hing_10
+    question: "mujhe ek acchi paneer butter masala ki recipe likh ke do"
+    expected_intent: "unknown"
+    language: "hinglish"
+    description: "Hinglish out-of-scope: Cooking recipe"
+
+  # ----------------------------------------------------------------------------
+  # English (Distinct Phrasing) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho2_en_01
+    question: "Break down our regional customer density across Brazilian federal states."
+    expected_intent: "state_analysis"
+    language: "en"
+    description: "English: Geographic state density"
+
+  - id: ho2_en_02
+    question: "How has our top-line revenue progressed on a month-by-month trajectory?"
+    expected_intent: "revenue_trend"
+    language: "en"
+    description: "English: Month-by-month revenue trajectory"
+
+  - id: ho2_en_03
+    question: "What percentage of shipments fulfilled the promised arrival SLA?"
+    expected_intent: "delivery_analysis"
+    language: "en"
+    description: "English: Delivery SLA fulfillment"
+
+  - id: ho2_en_04
+    question: "Identify the top merchant vendor ranked by completed order volume."
+    expected_intent: "seller_analysis"
+    language: "en"
+    description: "English: Vendor seller ranking"
+
+  - id: ho2_en_05
+    question: "Examine customer settlement methods between bank slips and credit cards."
+    expected_intent: "payment_analysis"
+    language: "en"
+    description: "English: Settlement methods payment analysis"
+
+  - id: ho2_en_06
+    question: "Provide an executive briefing on gross sales, fulfilled orders, and AOV."
+    expected_intent: "kpi_summary"
+    language: "en"
+    description: "English: Executive briefing KPIs"
+
+  - id: ho2_en_07
+    question: "Which merchandise catalog department generates the largest revenue share?"
+    expected_intent: "category_analysis"
+    language: "en"
+    description: "English: Merchandise category share"
+
+  - id: ho2_en_08
+    question: "Run a schema verification for orphaned records or referential gaps."
+    expected_intent: "data_quality"
+    language: "en"
+    description: "English: Referential data quality audit"
+
+  - id: ho2_en_09
+    question: "Detect statistical variations or irregular volume shifts in our time series."
+    expected_intent: "anomaly_detection"
+    language: "en"
+    description: "English: Irregular volume shifts outlier inquiry"
+
+  - id: ho2_en_10
+    question: "Calculate the orbital trajectory of the James Webb Space Telescope."
+    expected_intent: "unknown"
+    language: "en"
+    description: "English out-of-scope: Astrophysics calculation"

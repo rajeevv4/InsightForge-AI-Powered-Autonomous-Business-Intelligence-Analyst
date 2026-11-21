@@ -184,7 +184,59 @@ class SQLValidator:
                         "while aggregating revenue creates duplicate rows. Use view_order_level_summary or pre-aggregate in a CTE."
                     )
 
-        # 8. Force LIMIT <= 500
+        # 8. Delivered status business rule guard:
+        # If a query computes revenue/orders/units from orders, order_items, customers, or view_order_level_summary
+        # without a delivered-status filter and without using a view that already filters on delivered,
+        # return a validation error to trigger self-correction.
+        # Legitimate non-financial queries (e.g. status breakdown, canceled orders) are explicitly permitted.
+        target_tables = {"orders", "order_items", "customers", "view_order_level_summary"}
+        prefiltered_views = {"view_monthly_kpis_mom", "view_category_contribution", "view_delivery_sla_performance"}
+
+        if tables_set.intersection(target_tables) and not tables_set.issubset(prefiltered_views):
+            has_financial_or_volume_agg = False
+            for agg_node in stmt.find_all(exp.Sum, exp.Count, exp.Avg):
+                agg_sql = agg_node.sql().lower()
+                if any(w in agg_sql for w in ["price", "freight", "amount", "revenue", "order_id", "order_item", "item_count", "*"]):
+                    has_financial_or_volume_agg = True
+                    break
+
+            if has_financial_or_volume_agg:
+                # Exception (a): query groups by order_status (e.g. status distribution)
+                groups_by_status = False
+                for gb in stmt.find_all(exp.Group):
+                    gb_sql = gb.sql().lower()
+                    if "order_status" in gb_sql or "status" in gb_sql:
+                        groups_by_status = True
+                        break
+
+                if not groups_by_status:
+                    # Exception (b): query has explicit delivered status filter
+                    full_sql_lower = stmt.sql().lower()
+                    where_nodes = list(stmt.find_all(exp.Where))
+                    has_status_filter = False
+                    has_delivered_filter = False
+
+                    for w in where_nodes:
+                        w_sql = w.sql().lower()
+                        if "order_status" in w_sql or "status" in w_sql:
+                            has_status_filter = True
+                            if "'delivered'" in w_sql or '"delivered"' in w_sql:
+                                has_delivered_filter = True
+
+                    # Exception (c): query explicitly filters for other specific statuses (e.g. 'canceled', 'shipped')
+                    is_explicit_other_status = False
+                    if has_status_filter and not has_delivered_filter:
+                        other_statuses = ["'canceled'", "'unavailable'", "'shipped'", "'invoiced'", "'processing'", "'created'"]
+                        if any(s in full_sql_lower for s in other_statuses) or "!=" in full_sql_lower or "<>" in full_sql_lower:
+                            is_explicit_other_status = True
+
+                    if not has_delivered_filter and not is_explicit_other_status:
+                        return False, None, (
+                            "Business rule violation: Queries computing revenue, orders, or volume metrics from orders/order_items "
+                            "must filter on delivered orders (e.g. WHERE order_status = 'delivered') unless specifically analyzing other statuses or grouping by order_status."
+                        )
+
+        # 9. Force LIMIT <= 500
         # If top-level statement has limit, clamp it; otherwise append limit(500)
         try:
             limit_exp = stmt.args.get("limit")
@@ -198,7 +250,7 @@ class SQLValidator:
         except Exception:
             stmt = stmt.limit(MAX_ALLOWED_LIMIT)
 
-        # 9. Strip comments from AST (neutralizes comment tricks) and emit clean Postgres SQL
+        # 10. Strip comments from AST (neutralizes comment tricks) and emit clean Postgres SQL
         for node in stmt.walk():
             node.comments = None
 

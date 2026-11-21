@@ -530,50 +530,57 @@ User Question: "{question}"
         elif intent == "anomaly_detection":
             if isinstance(data, dict):
                 total = data.get("total_anomalies", 0)
+                high_count = data.get("high_severity_count", 0)
+                metric_counts = data.get("metric_counts", {})
                 top_items = data.get("top_anomalies", [])
             elif isinstance(data, list):
                 total = len(data)
+                high_count = sum(1 for a in data if a.get("severity") == "high")
+                metric_counts = {}
                 top_items = data
             else:
                 total = 0
+                high_count = 0
+                metric_counts = {}
                 top_items = []
 
-            if top_items:
-                top = top_items[0]
-                period = top.get("period", "")
-                metric_name = top.get("metric", "metric")
-                obs = top.get("observed", 0.0)
-                exp = top.get("expected", 0.0)
-                dev = top.get("deviation_score", 0.0)
-                direction = top.get("direction", "spike")
-                method = top.get("method", "statistical")
-                known = top.get("known_event_candidate")
-                event_note = f" (corresponds to {known})" if known else ""
-                val_str = f"R$ {obs:,.2f}" if "revenue" in metric_name or "aov" in metric_name else f"{obs:,.2f}"
+            counts_breakdown = ", ".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in sorted(metric_counts.items())]) if metric_counts else ""
 
-                if language == "hi":
-                    return (
-                        f"विसंगति जांच में **{total}** सांख्यिकीय विसंगतियों की पहचान की गई। "
-                        f"शीर्ष विसंगति **{period}** को `{metric_name}` में देखी गई (**{val_str}**), "
-                        f"अपेक्षित आधार रेखा {exp:,.2f}, विचलन स्कोर {dev:.2f}।{event_note}"
-                    )
-                elif language == "hinglish":
-                    return (
-                        f"Anomaly detection scan mein **{total}** statistical anomalies mili hain. "
-                        f"Top anomaly **{period}** ko `{metric_name}` mein detect hui (**{val_str}** vs expected {exp:,.2f}){event_note}."
-                    )
-                else:
-                    return (
-                        f"Anomaly detection scan identified **{total}** statistical anomalies. "
-                        f"The top detected anomaly occurred on **{period}** in `{metric_name}` with a {direction} "
-                        f"to **{val_str}** (expected baseline {exp:,.2f}, deviation score {dev:.2f} via {method}){event_note}."
-                    )
+            top_events_formatted = []
+            for idx, a in enumerate(top_items[:3], 1):
+                p = a.get("period", "")
+                m = (a.get("metric") or "metric").replace("_", " ")
+                obs = a.get("observed", 0.0)
+                exp = a.get("expected", 0.0)
+                ev = a.get("known_event_candidate")
+                ev_str = f" [{ev}]" if ev else " [statistical_outlier]"
+                obs_fmt = f"R$ {obs:,.2f}" if "revenue" in m or "aov" in m else f"{obs:,.2f}"
+                exp_fmt = f"R$ {exp:,.2f}" if "revenue" in m or "aov" in m else f"{exp:,.2f}"
+                top_events_formatted.append(f"{idx}. {p} ({m}): observed {obs_fmt} vs expected {exp_fmt}{ev_str}")
+
+            events_bullet = "\n• " + "\n• ".join(top_events_formatted) if top_events_formatted else ""
 
             if language == "hi":
-                return f"विसंगति जांच पूर्ण हुई। {total} सांख्यिकीय विसंगतियाँ पाई गईं।"
+                return (
+                    f"दैनिक बहु-मैट्रिक विसंगति जांच (राजस्व, ऑर्डर, एओवी, वितरण एसएलए और सीएसएटी) के दायरे में कुल **{total}** सांख्यिकीय विसंगतियों "
+                    f"(जिनमें से **{high_count}** उच्च गंभीरता की हैं) की पहचान की गई।\n"
+                    f"मैट्रिक्स के अनुसार विवरण: {counts_breakdown}।\n\n"
+                    f"शीर्ष 3 विसंगति घटनाएं (ज्ञात प्रचार आयोजनों को लेबल किया गया है; अन्य सांख्यिकीय आउटलायर हैं):{events_bullet}"
+                )
             elif language == "hinglish":
-                return f"Anomaly scan complete hua. Found {total} statistical anomalies."
-            return f"Anomaly detection scan completed. Found {total} statistical anomalies."
+                return (
+                    f"Full multi-metric daily anomaly detection scan (revenue, order count, AOV, delivery SLA, review CSAT) ke scope mein "
+                    f"total **{total}** statistical anomalies detect hui hain (**{high_count}** high severity).\n"
+                    f"Per-metric breakdown: {counts_breakdown}.\n\n"
+                    f"Top 3 detected events (known events are catalog-labelled; others are neutral statistical outliers):{events_bullet}"
+                )
+            else:
+                return (
+                    f"Scope: Comprehensive multi-metric daily anomaly scan across core business series (revenue, orders, AOV, delivery SLA, CSAT). "
+                    f"Detected **{total}** statistical anomalies (**{high_count}** high severity).\n"
+                    f"Metric breakdown: {counts_breakdown}.\n\n"
+                    f"Top 3 detected events (known events are labelled from the event catalog; other variations are neutral statistical outliers):{events_bullet}"
+                )
 
         if language == "hi":
             return f"'{intent}' के लिए विश्लेषणात्मक क्वेरी PostgreSQL के विरुद्ध सफलतापूर्वक निष्पादित हुई।"

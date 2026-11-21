@@ -95,8 +95,18 @@ class AIAnalyticsRouter:
                 "anomalies_flagged": []
             }
         elif intent == "anomaly_detection":
-            return "Statistical & Time-Series Anomaly Detection Report", {
-                "total_anomalies": 111,
+            return "Comprehensive Multi-Metric Anomaly Detection Scan", {
+                "scan_scope": "Full multi-metric daily scan across core business series (revenue, orders, AOV, delivery SLA, customer sentiment)",
+                "total_anomalies": 427,
+                "high_severity_count": 6,
+                "metric_counts": {
+                    "gross_revenue": 85,
+                    "order_count": 95,
+                    "aov": 80,
+                    "on_time_delivery_rate": 95,
+                    "avg_review_score": 60,
+                    "multivariate_daily": 12
+                },
                 "top_anomalies": [
                     {
                         "metric": "gross_revenue",
@@ -104,11 +114,38 @@ class AIAnalyticsRouter:
                         "period": "2017-11-24",
                         "observed": 176940.50,
                         "expected": 28450.00,
-                        "deviation_score": 6.85,
+                        "deviation_score": 26.06,
                         "severity": "high",
                         "direction": "spike",
                         "method": "rolling_zscore",
-                        "known_event_candidate": "Black Friday 2017 (promotional_peak)"
+                        "known_event_candidate": "Black Friday 2017 (promotional_peak)",
+                        "classification": "Black Friday 2017 (promotional_peak)"
+                    },
+                    {
+                        "metric": "order_count",
+                        "dimension": "overall",
+                        "period": "2017-11-24",
+                        "observed": 1176.00,
+                        "expected": 182.00,
+                        "deviation_score": 20.88,
+                        "severity": "high",
+                        "direction": "spike",
+                        "method": "rolling_zscore",
+                        "known_event_candidate": "Black Friday 2017 (promotional_peak)",
+                        "classification": "Black Friday 2017 (promotional_peak)"
+                    },
+                    {
+                        "metric": "order_count",
+                        "dimension": "overall",
+                        "period": "2018-01-01",
+                        "observed": 21.00,
+                        "expected": 178.00,
+                        "deviation_score": -16.47,
+                        "severity": "high",
+                        "direction": "drop",
+                        "method": "rolling_zscore",
+                        "known_event_candidate": "New Year's Day 2018 (holiday_slowdown)",
+                        "classification": "New Year's Day 2018 (holiday_slowdown)"
                     }
                 ],
                 "primary_anomaly": {
@@ -117,11 +154,12 @@ class AIAnalyticsRouter:
                     "period": "2017-11-24",
                     "observed": 176940.50,
                     "expected": 28450.00,
-                    "deviation_score": 6.85,
+                    "deviation_score": 26.06,
                     "severity": "high",
                     "direction": "spike",
                     "method": "rolling_zscore",
-                    "known_event_candidate": "Black Friday 2017 (Record e-commerce sales peak across Brazil)"
+                    "known_event_candidate": "Black Friday 2017 (promotional_peak)",
+                    "classification": "Black Friday 2017 (promotional_peak)"
                 }
             }
         return "Analytics", {}
@@ -161,14 +199,21 @@ class AIAnalyticsRouter:
                 data = DataQualityService.fetch_audit_summary()
                 metric = "Data Quality Audit & Integrity Report"
             elif intent == "anomaly_detection":
-                anom_res = AnomalyService.detect_all(grain="daily", metric="gross_revenue")
-                anom_list = [a.model_dump() for a in anom_res.anomalies[:5]]
+                scan_res = AnomalyService.run_full_scan(grain="daily")
+                metric_counts = {}
+                for a in scan_res.anomalies:
+                    metric_counts[a.metric] = metric_counts.get(a.metric, 0) + 1
+
+                top_3 = [a.model_dump() for a in scan_res.anomalies[:3]]
                 data = {
-                    "total_anomalies": anom_res.total_anomalies,
-                    "top_anomalies": anom_list,
-                    "primary_anomaly": anom_list[0] if anom_list else None
+                    "scan_scope": "Full multi-metric daily scan across core business series (revenue, orders, AOV, delivery SLA, customer sentiment)",
+                    "total_anomalies": scan_res.anomalies_detected,
+                    "high_severity_count": scan_res.high_severity_count,
+                    "metric_counts": metric_counts,
+                    "top_anomalies": top_3,
+                    "primary_anomaly": top_3[0] if top_3 else None
                 }
-                metric = "Statistical & Time-Series Anomaly Detection Report"
+                metric = "Comprehensive Multi-Metric Anomaly Detection Scan"
             else:
                 raise ValueError(f"Unhandled intent routing: {intent}")
         except (DatabaseUnavailableError, QueryTimeoutError):
