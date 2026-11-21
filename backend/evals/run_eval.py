@@ -211,7 +211,7 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
         "intent": "anomaly_detection",
         "metric": "Statistical Anomaly Detection",
         "data": {
-            "total_anomalies": 12,
+            "total_anomalies": 111,
             "top_anomalies": [
                 {
                     "metric": "gross_revenue",
@@ -231,8 +231,13 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
 }
 
 
-def load_golden_questions() -> List[Dict[str, Any]]:
-    yaml_path = Path(__file__).resolve().parent / "golden_questions.yaml"
+def load_golden_questions(questions_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    if questions_path:
+        yaml_path = Path(questions_path)
+        if not yaml_path.is_absolute():
+            yaml_path = (Path(__file__).resolve().parent / questions_path).resolve()
+    else:
+        yaml_path = Path(__file__).resolve().parent / "golden_questions.yaml"
     with open(yaml_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return data.get("questions", data.get("golden_questions", []))
@@ -413,10 +418,10 @@ def run_sql_evaluations() -> bool:
     return validity_rate >= 80.0
 
 
-def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
+def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path: Optional[str] = None) -> bool:
     if live and "USE_FIXTURES" in os.environ:
         del os.environ["USE_FIXTURES"]
-    all_questions = load_golden_questions()
+    all_questions = load_golden_questions(questions_path=questions_path)
     questions = [q for q in all_questions if not q.get("id", "").startswith("sql_")]
     mode_upper = mode.upper()
     evidence_source = "LIVE DATABASE (PostgreSQL schema insightforge)" if live else "CANONICAL FIXTURES (Offline Benchmark)"
@@ -615,11 +620,16 @@ def main():
         default=False,
         help="Compute numeric-faithfulness evidence from the live PostgreSQL database instead of canonical fixtures"
     )
+    parser.add_argument(
+        "--questions",
+        default=None,
+        help="Custom YAML questions dataset (e.g. golden_questions_holdout.yaml)"
+    )
     args = parser.parse_args()
     if args.mode == "sql":
         success = run_sql_evaluations()
     else:
-        success = run_evaluations(mode=args.mode, live=args.live)
+        success = run_evaluations(mode=args.mode, live=args.live, questions_path=args.questions)
     sys.exit(0 if success else 1)
 
 

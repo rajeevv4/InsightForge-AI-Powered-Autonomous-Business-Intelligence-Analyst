@@ -94,7 +94,7 @@ class AIAnalyticsRouter:
             }
         elif intent == "anomaly_detection":
             return "Statistical & Time-Series Anomaly Detection Report", {
-                "total_anomalies": 12,
+                "total_anomalies": 111,
                 "top_anomalies": [
                     {
                         "metric": "gross_revenue",

@@ -259,13 +259,13 @@ export const AskInsightForge: React.FC = () => {
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
-      setVoiceNotice(`Backend service unavailable. Using browser speech recognition (${recognition.lang})...`);
+      setVoiceNotice(`Backend service unavailable. Using browser speech recognition (${recognition.lang}). Note: Audio is processed by the browser vendor's cloud speech service, not Google Gemini.`);
 
       recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         if (transcript) {
           setQuestion(transcript);
-          setVoiceNotice('Voice captured via browser Web Speech API. You can review or edit before sending.');
+          setVoiceNotice('Voice captured via browser Web Speech API (processed by browser vendor speech service). You can review or edit before sending.');
         }
       };
 

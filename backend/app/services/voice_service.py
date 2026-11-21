@@ -62,6 +62,12 @@ def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
     if not audio_bytes or len(audio_bytes) == 0:
         raise AudioValidationError("Audio file is empty. Please provide recorded audio data.", status_code=400)
 
+    if len(audio_bytes) < 32:
+        raise AudioValidationError(
+            f"Audio payload is too short ({len(audio_bytes)} bytes) to contain valid audio data or headers.",
+            status_code=400
+        )
+
     if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise AudioValidationError(
             f"Audio file exceeds maximum allowed size of 10 MB (provided: {len(audio_bytes) / (1024 * 1024):.2f} MB).",
@@ -103,16 +109,33 @@ def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
     elif b"ftyp" in prefix or prefix[4:8] == b"ftyp":
         magic_ok = True
         norm_mime = "audio/mp4"
-    else:
-        # If client provided allowed mime type, accept header format even if container has proprietary header
-        if norm_mime in ALLOWED_MIME_TYPES:
-            magic_ok = True
 
     if not magic_ok:
         raise AudioValidationError(
             "Audio file content does not match recognized audio signatures (RIFF, OGG, WebM, MP3, MP4/M4A).",
             status_code=415
         )
+
+    # Decoded audio duration check for WAV audio (exact PCM header inspection)
+    if norm_mime == "audio/wav":
+        try:
+            import io
+            import wave
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
+                framerate = wf.getframerate()
+                nframes = wf.getnframes()
+                if framerate > 0:
+                    decoded_dur = float(nframes) / float(framerate)
+                    if decoded_dur > 60.0:
+                        raise AudioValidationError(
+                            f"Decoded audio length ({decoded_dur:.1f} s) exceeds maximum limit of 60 seconds.",
+                            status_code=400
+                        )
+        except AudioValidationError:
+            raise
+        except Exception:
+            # If wave header is partial/unsupported compression, pass to downstream handler
+            pass
 
     return norm_mime
 

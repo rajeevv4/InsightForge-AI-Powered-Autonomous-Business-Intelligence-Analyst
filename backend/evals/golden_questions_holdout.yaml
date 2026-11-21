@@ -1,0 +1,195 @@
+# InsightForge Held-Out Multilingual Evaluation Dataset
+# 30 NEW Held-Out Questions (10 Hindi, 10 Hinglish, 10 English)
+# Written in informal, colloquial styles with alternative vocabulary,
+# spelling variants, and mixed phrasing.
+# STRICT RULE: Heuristic rules must NOT be tuned on this dataset.
+
+questions:
+  # ----------------------------------------------------------------------------
+  # Hindi (Devanagari) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho_hi_01
+    question: "अरे भाई, किस राज्य के लोग सबसे ज्यादा शॉपिंग कर रहे हैं?"
+    expected_intent: "state_analysis"
+    language: "hi"
+    description: "Hindi informal: Top shopping state"
+
+  - id: ho_hi_02
+    question: "सबसे ज्यादा घाटा या फायदा किस महीने में देखने को मिला?"
+    expected_intent: "revenue_trend"
+    language: "hi"
+    description: "Hindi informal: Monthly performance trend"
+
+  - id: ho_hi_03
+    question: "क्या हमारे डिलीवरी वाले टाइम पर सामान पहुंचा पा रहे हैं?"
+    expected_intent: "delivery_analysis"
+    language: "hi"
+    description: "Hindi informal: Delivery SLA timing"
+
+  - id: ho_hi_04
+    question: "कौन सा मर्चेंट सबसे तगड़ा धंधा कर रहा है?"
+    expected_intent: "seller_analysis"
+    language: "hi"
+    description: "Hindi colloquial: Top seller performance"
+
+  - id: ho_hi_05
+    question: "क्रेडिट कार्ड से पेमेंट करने वाले कितने लोग हैं?"
+    expected_intent: "payment_analysis"
+    language: "hi"
+    description: "Hindi informal: Credit card payment count"
+
+  - id: ho_hi_06
+    question: "कंपनी का ओवरऑल सेल और कुल कितना कारोबार रहा?"
+    expected_intent: "kpi_summary"
+    language: "hi"
+    description: "Hindi informal: Executive KPI total business"
+
+  - id: ho_hi_07
+    question: "हमारे पास सबसे ज्यादा कमाई वाली कौन सी कैटेगरी है?"
+    expected_intent: "category_analysis"
+    language: "hi"
+    description: "Hindi informal: Top category revenue"
+
+  - id: ho_hi_08
+    question: "डेटा में कोई गड़बड़ी या नल वैल्यूज तो नहीं भरी हैं?"
+    expected_intent: "data_quality"
+    language: "hi"
+    description: "Hindi informal: Null values and database quality"
+
+  - id: ho_hi_09
+    question: "क्या सेल में अचानक कोई बहुत बड़ा उछाल आया था कभी?"
+    expected_intent: "anomaly_detection"
+    language: "hi"
+    description: "Hindi informal: Unusual sales surge / anomaly"
+
+  - id: ho_hi_10
+    question: "घर पर स्वादिष्ट बिरयानी बनाने की आसान रेसिपी क्या है?"
+    expected_intent: "unknown"
+    language: "hi"
+    description: "Hindi out-of-scope: Cooking recipe"
+
+  # ----------------------------------------------------------------------------
+  # Hinglish (Roman Script) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho_hing_01
+    question: "bhai sabse top pe kaunsi product category chal rahi hai?"
+    expected_intent: "category_analysis"
+    language: "hinglish"
+    description: "Hinglish informal: Top product category"
+
+  - id: ho_hing_02
+    question: "sao paulo ya kisi state se orders ka kya scene hai?"
+    expected_intent: "state_analysis"
+    language: "hinglish"
+    description: "Hinglish slang: State regional distribution"
+
+  - id: ho_hing_03
+    question: "top seller kaun ban ke baitha hai platform par?"
+    expected_intent: "seller_analysis"
+    language: "hinglish"
+    description: "Hinglish informal: Leading marketplace vendor"
+
+  - id: ho_hing_04
+    question: "orders kitne late chal rahe hain transit mein?"
+    expected_intent: "delivery_analysis"
+    language: "hinglish"
+    description: "Hinglish informal: Transit delays and SLA"
+
+  - id: ho_hing_05
+    question: "log emi ya installment pe kitna purchase kar rahe?"
+    expected_intent: "payment_analysis"
+    language: "hinglish"
+    description: "Hinglish informal: Installment payments"
+
+  - id: ho_hing_06
+    question: "total milake kitna rupaya banaya gross business ne?"
+    expected_intent: "kpi_summary"
+    language: "hinglish"
+    description: "Hinglish informal: Total gross revenue"
+
+  - id: ho_hing_07
+    question: "pichle saal ke comparison me sales ka kya graph hai?"
+    expected_intent: "revenue_trend"
+    language: "hinglish"
+    description: "Hinglish informal: Sales trend trajectory"
+
+  - id: ho_hing_08
+    question: "database me duplicates ya missing customer check karo"
+    expected_intent: "data_quality"
+    language: "hinglish"
+    description: "Hinglish informal: Data quality check"
+
+  - id: ho_hing_09
+    question: "kya kabhi sales achanak se 10 guna spike hui thi?"
+    expected_intent: "anomaly_detection"
+    language: "hinglish"
+    description: "Hinglish informal: Abnormal spike query"
+
+  - id: ho_hing_10
+    question: "mujhe ek acchi romantic comedy movie suggest karo na"
+    expected_intent: "unknown"
+    language: "hinglish"
+    description: "Hinglish out-of-scope: Movie recommendation"
+
+  # ----------------------------------------------------------------------------
+  # English (Distinct Phrasing) - 10 questions
+  # ----------------------------------------------------------------------------
+  - id: ho_en_01
+    question: "Which items are bringing in the absolute lion's share of cash by category?"
+    expected_intent: "category_analysis"
+    language: "en"
+    description: "English idiom: Category revenue leader"
+
+  - id: ho_en_02
+    question: "Can you map out order density across Brazilian territories and states?"
+    expected_intent: "state_analysis"
+    language: "en"
+    description: "English formal: Geographic state distribution"
+
+  - id: ho_en_03
+    question: "Who is our number one merchant partner by order volume?"
+    expected_intent: "seller_analysis"
+    language: "en"
+    description: "English business: Top merchant partner"
+
+  - id: ho_en_04
+    question: "Are packages arriving before the estimated drop-off deadline?"
+    expected_intent: "delivery_analysis"
+    language: "en"
+    description: "English logistics: Delivery arrival vs deadline"
+
+  - id: ho_en_05
+    question: "Do buyers prefer boleto over card transactions?"
+    expected_intent: "payment_analysis"
+    language: "en"
+    description: "English comparison: Payment method preference"
+
+  - id: ho_en_06
+    question: "What is the net top-line monetary figure for gross fulfilled transactions?"
+    expected_intent: "kpi_summary"
+    language: "en"
+    description: "English financial: Top-line gross revenue"
+
+  - id: ho_en_07
+    question: "Did we experience any seasonal surge during holiday months over time?"
+    expected_intent: "revenue_trend"
+    language: "en"
+    description: "English seasonal: Monthly trajectory over time"
+
+  - id: ho_en_08
+    question: "Any referential integrity errors or orphan foreign keys between orders and items?"
+    expected_intent: "data_quality"
+    language: "en"
+    description: "English technical: FK integrity check"
+
+  - id: ho_en_09
+    question: "Flag any abnormal daily transactions or outliers deviating from the norm"
+    expected_intent: "anomaly_detection"
+    language: "en"
+    description: "English statistical: Outlier detection"
+
+  - id: ho_en_10
+    question: "Can you compose a Shakespearean sonnet about autumn leaves?"
+    expected_intent: "unknown"
+    language: "en"
+    description: "English creative: Sonnet writing"

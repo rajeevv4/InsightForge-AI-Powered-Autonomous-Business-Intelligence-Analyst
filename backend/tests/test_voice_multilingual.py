@@ -21,6 +21,10 @@ class TestVoiceAndMultilingual(unittest.TestCase):
         os.environ["USE_FIXTURES"] = "1"
         cls.client = TestClient(app)
 
+    def setUp(self):
+        from backend.app.limiter import limiter
+        limiter.reset()
+
     # ------------------------------------------------------------------------
     # 1. Voice Transcribe Endpoint Tests
     # ------------------------------------------------------------------------
@@ -223,6 +227,117 @@ class TestVoiceAndMultilingual(unittest.TestCase):
         )
         is_grounded = verify_numeric_grounding(hallucinated_hindi_answer, evidence_data)
         self.assertFalse(is_grounded)
+
+    # ------------------------------------------------------------------------
+    # 4. Level 4.1 Edge Tests (Noise, Silence, Corrupted, Short Audio, Decoded Duration)
+    # ------------------------------------------------------------------------
+    def test_transcribe_very_short_audio_rejected(self):
+        """Audio under 32 bytes is rejected as too short for audio headers."""
+        response = self.client.post(
+            "/api/voice/transcribe",
+            files={"file": ("tiny.wav", io.BytesIO(b"RIFFtiny"), "audio/wav")}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too short", response.json()["detail"])
+
+    def test_transcribe_corrupted_file_with_valid_extension(self):
+        """Corrupted audio payload with valid extension is rejected by magic byte check."""
+        corrupted_payload = b"THIS_IS_DEFINITELY_NOT_A_VALID_AUDIO_FILE_DATA_CORRUPT" * 5
+        response = self.client.post(
+            "/api/voice/transcribe",
+            files={"file": ("recording.wav", io.BytesIO(corrupted_payload), "audio/wav")}
+        )
+        self.assertEqual(response.status_code, 415)
+        self.assertIn("does not match recognized audio signatures", response.json()["detail"])
+
+    def test_transcribe_silence_graceful(self):
+        """Silence audio yielding empty transcript from Gemini returns 200 without crashing."""
+        dummy_audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 300
+        mock_gemini_resp = MagicMock()
+        mock_gemini_resp.text = '{"text": "", "detected_language": "en", "confidence": 0.0}'
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_gemini_resp
+
+        with patch("backend.app.config.settings.GEMINI_API_KEY", "dummy_key"):
+            with patch("google.genai.Client", return_value=mock_client):
+                response = self.client.post(
+                    "/api/voice/transcribe",
+                    files={"file": ("silence.webm", io.BytesIO(dummy_audio), "audio/webm")}
+                )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["text"], "")
+        self.assertEqual(data["confidence"], 0.0)
+
+    def test_transcribe_non_speech_noise(self):
+        """Non-speech noise yielding low confidence transcript is handled gracefully."""
+        dummy_audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 300
+        mock_gemini_resp = MagicMock()
+        mock_gemini_resp.text = '{"text": "[noise]", "detected_language": "en", "confidence": 0.20}'
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_gemini_resp
+
+        with patch("backend.app.config.settings.GEMINI_API_KEY", "dummy_key"):
+            with patch("google.genai.Client", return_value=mock_client):
+                response = self.client.post(
+                    "/api/voice/transcribe",
+                    files={"file": ("noise.webm", io.BytesIO(dummy_audio), "audio/webm")}
+                )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["text"], "[noise]")
+        self.assertEqual(data["confidence"], 0.20)
+
+    def test_hindi_question_with_mixed_numbers_and_years(self):
+        """Hindi questions with numbers/years route properly and pass metadata grounding."""
+        q = "2017 में कुल कितने ऑर्डर सफलतापूर्वक डिलीवर हुए?"
+        res = AIService.classify_intent_heuristic(q)
+        self.assertEqual(res["intent"], "kpi_summary")
+
+        evidence = {
+            "total_delivered_orders": 96478,
+            "total_gross_revenue": 15419773.75
+        }
+        answer = "2017 और पूरे डेटासेट में कुल 96,478 ऑर्डर सफलतापूर्वक डिलीवर किए गए।"
+        # 2017 is common metadata number, 96,478 is grounded in evidence
+        self.assertTrue(verify_numeric_grounding(answer, evidence))
+
+    def test_hindi_question_expecting_state_name(self):
+        """Hindi questions expecting state name route to state_analysis and verify SP revenue."""
+        q = "साओ पाउलो राज्य से कुल कितना राजस्व प्राप्त हुआ?"
+        res = AIService.classify_intent_heuristic(q)
+        self.assertEqual(res["intent"], "state_analysis")
+
+        evidence = {
+            "state": "SP",
+            "total_gross_revenue": 5769703.15,
+            "revenue_share_percent": 38.33
+        }
+        answer = "साओ पाउलो (SP) राज्य से कुल राजस्व R$ 5,769,703.15 प्राप्त हुआ जो कुल बिक्री का 38.33% है।"
+        self.assertTrue(verify_numeric_grounding(answer, evidence))
+
+    def test_decoded_wav_duration_over_60s_rejected(self):
+        """Decoded WAV audio longer than 60s is rejected with HTTP 400."""
+        import wave
+        buf = io.BytesIO()
+        # 16000 Hz, 1 channel, 2 bytes per sample, 61 seconds = 61 * 16000 frames
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"\x00\x00" * (16000 * 61))
+
+        long_wav_bytes = buf.getvalue()
+        response = self.client.post(
+            "/api/voice/transcribe",
+            files={"file": ("long.wav", io.BytesIO(long_wav_bytes), "audio/wav")}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("exceeds maximum limit of 60 seconds", response.json()["detail"])
 
 
 if __name__ == "__main__":
