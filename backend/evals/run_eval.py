@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from backend.app.services.ai_service import AIService
+from backend.app.services.ai_service import AIService, detect_language
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter
 from backend.app.services.grounding import (
     extract_numbers_from_text,
@@ -56,12 +56,12 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
         "data": [
             {
                 "category": "health_beauty",
-                "total_orders": 8836,
-                "units_sold": 9670,
-                "total_revenue": 1258819.00,
-                "avg_item_price": 130.18,
-                "avg_review_score": 4.14,
-                "revenue_share_percent": 9.52
+                "total_orders": 8647,
+                "units_sold": 9465,
+                "total_revenue": 1233131.72,
+                "avg_item_price": 130.28,
+                "avg_review_score": 4.19,
+                "revenue_share_percent": 9.33
             },
             {
                 "category": "watches_gifts",
@@ -91,15 +91,15 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
             {
                 "state": "SP",
                 "customer_state": "SP",
-                "active_customers": 40494,
-                "total_orders": 40494,
-                "total_revenue": 5041040.67,
-                "total_product_revenue": 5041040.67,
-                "total_freight_revenue": 709827.00,
-                "total_gross_revenue": 5750867.67,
-                "avg_freight_cost": 17.53,
-                "revenue_contribution_pct": 38.13,
-                "revenue_share_percent": 38.13
+                "active_customers": 39156,
+                "total_orders": 40501,
+                "total_revenue": 5769703.15,
+                "total_product_revenue": 5067633.16,
+                "total_freight_revenue": 702069.99,
+                "total_gross_revenue": 5769703.15,
+                "avg_freight_cost": 15.12,
+                "revenue_contribution_pct": 38.33,
+                "revenue_share_percent": 38.33
             },
             {
                 "state": "RJ",
@@ -139,12 +139,12 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
             "on_time_delivery_pct": 91.90,
             "on_time_percentage": 91.90,
             "delay_percentage": 8.10,
-            "avg_delivery_duration_days": 12.50,
-            "avg_actual_delivery_days": 12.50,
+            "avg_delivery_duration_days": 10.90,
+            "avg_actual_delivery_days": 10.90,
             "avg_estimated_delivery_days": 23.40,
             "avg_delay_days": 8.60,
-            "on_time_orders": 88651,
-            "delayed_orders": 7827
+            "on_time_orders": 88644,
+            "delayed_orders": 7826
         }
     },
     "payment_analysis": {
@@ -154,11 +154,11 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
         "data": [
             {
                 "payment_type": "credit_card",
-                "order_count": 76795,
-                "total_payment_value": 12542084.19,
-                "avg_payment_amount": 163.32,
-                "avg_installments": 3.51,
-                "payment_value_percent": 78.34
+                "order_count": 74304,
+                "total_payment_value": 12101094.88,
+                "avg_payment_amount": 162.24,
+                "avg_installments": 3.50,
+                "payment_value_percent": 78.48
             },
             {
                 "payment_type": "boleto",
@@ -440,17 +440,26 @@ def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
     numeric_correct = 0
 
     category_stats: Dict[str, Dict[str, int]] = {}
+    language_stats: Dict[str, Dict[str, int]] = {
+        "en": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
+        "hi": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
+        "hinglish": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
+    }
 
     for q in questions:
         qid = q["id"]
         qtext = q["question"]
         expected_intent = q["expected_intent"]
         expected_val = q.get("expected_value")
+        qlang = q.get("language") or detect_language(qtext)
+        if qlang not in language_stats:
+            language_stats[qlang] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
 
         prefix = qid.split("_")[0]
         if prefix not in category_stats:
             category_stats[prefix] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
         category_stats[prefix]["total"] += 1
+        language_stats[qlang]["total"] += 1
 
         # 1. Intent Classification
         if mode == "gemini" and client:
@@ -473,12 +482,14 @@ def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
         if intent_match:
             intent_correct += 1
             category_stats[prefix]["intent_ok"] += 1
+            language_stats[qlang]["intent_ok"] += 1
 
         # 2. Numeric Faithfulness Check (if question has expected numeric answer)
         num_match: Optional[bool] = None
         if expected_val is not None:
             numeric_total += 1
             category_stats[prefix]["num_total"] += 1
+            language_stats[qlang]["num_total"] += 1
 
             if live:
                 try:
@@ -491,17 +502,18 @@ def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
             if evidence:
                 if mode == "gemini" and client:
                     try:
-                        answer = AIService.synthesize_explanation_gemini(client, qtext, evidence)
+                        answer = AIService.synthesize_explanation_gemini(client, qtext, evidence, language=qlang)
                     except Exception:
-                        answer = AIService.synthesize_explanation_heuristic(qtext, evidence)
+                        answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
                 else:
-                    answer = AIService.synthesize_explanation_heuristic(qtext, evidence)
+                    answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
 
                 num_match = check_numeric_match(answer, float(expected_val))
                 grounded = verify_numeric_grounding(answer, evidence.get("data", {}))
                 if num_match and grounded:
                     numeric_correct += 1
                     category_stats[prefix]["num_ok"] += 1
+                    language_stats[qlang]["num_ok"] += 1
                 else:
                     num_match = False
             else:
@@ -532,7 +544,8 @@ def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
         "dq": "Data Quality",
         "anom": "Anomalies",
         "oos": "Out-of-Scope",
-        "amb": "Ambiguous"
+        "amb": "Ambiguous",
+        "ml": "Multilingual"
     }
 
     for prefix, stats in category_stats.items():
@@ -546,6 +559,29 @@ def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
         n_str = f"{n_ok}/{n_tot} ({(n_ok/n_tot*100.0):.1f}%)" if n_tot > 0 else "N/A"
 
         print(f"{name:<12} | {total:<6} | {i_ok}/{total} ({i_pct:.1f}%) | {n_str:<14}")
+
+    # Print Language Breakdown Table
+    print("\n" + "=" * 52)
+    print("LANGUAGE BREAKDOWN (Level 4 Multilingual Evaluation)")
+    print("=" * 52)
+    print(f"{'Language':<14} | {'Cases':<6} | {'Intent Acc':<12} | {'Numeric Faith':<14}")
+    print("-" * 52)
+    lang_labels = {
+        "en": "English",
+        "hi": "Hindi (Dev)",
+        "hinglish": "Hinglish"
+    }
+    for lk, lstats in language_stats.items():
+        lname = lang_labels.get(lk, lk)
+        ltotal = lstats["total"]
+        li_ok = lstats["intent_ok"]
+        li_pct = (li_ok / ltotal * 100.0) if ltotal else 0.0
+
+        ln_tot = lstats["num_total"]
+        ln_ok = lstats["num_ok"]
+        ln_str = f"{ln_ok}/{ln_tot} ({(ln_ok/ln_tot*100.0):.1f}%)" if ln_tot > 0 else "N/A"
+
+        print(f"{lname:<14} | {ltotal:<6} | {li_ok}/{ltotal} ({li_pct:.1f}%) | {ln_str:<14}")
 
     # Overall Summary
     intent_accuracy = (intent_correct / len(questions)) * 100.0

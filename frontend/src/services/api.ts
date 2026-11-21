@@ -13,7 +13,8 @@ import {
   AnomalyListResponse,
   AnomalyScanRequest,
   AnomalyScanResponse,
-  SQLAskResponse
+  SQLAskResponse,
+  VoiceTranscribeResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
@@ -93,6 +94,18 @@ export const api = {
 
   scanAnomalies: async (params?: AnomalyScanRequest): Promise<AnomalyScanResponse> => {
     const res = await client.post<AnomalyScanResponse>('/anomalies/scan', params || {});
+    return res.data;
+  },
+
+  transcribeVoice: async (audioBlob: Blob, filename: string = 'recording.webm'): Promise<VoiceTranscribeResponse> => {
+    const formData = new FormData();
+    formData.append('file', audioBlob, filename);
+    const res = await client.post<VoiceTranscribeResponse>('/voice/transcribe', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000,
+    });
     return res.data;
   },
 };

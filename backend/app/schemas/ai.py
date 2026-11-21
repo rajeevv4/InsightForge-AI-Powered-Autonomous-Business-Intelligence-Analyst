@@ -36,6 +36,7 @@ class AskAIResponse(BaseModel):
     reason: str = Field(..., description="Reasoning behind intent classification")
     answer: str = Field(..., description="Concise, evidence-grounded AI explanation")
     evidence: Optional[AIEvidence] = Field(default=None, description="Grounding data evidence from analytics layer")
+    language: str = Field(default="en", description="Detected query and response language ('en', 'hi', 'hinglish')")
     rephrase_suggested: bool = Field(default=False, description="True if intent confidence was below threshold")
     grounding_verified: bool = Field(default=True, description="True if output numbers are grounded in evidence; False if verification failed and fallback was triggered")
 
@@ -49,6 +50,7 @@ class SQLAskResponse(BaseModel):
     rows: Optional[List[Dict[str, Any]]] = Field(default=None, description="Capped rows returned by PostgreSQL (max 500)")
     columns: Optional[List[str]] = Field(default=None, description="Column names returned")
     row_count: int = Field(default=0, description="Number of rows returned")
+    language: str = Field(default="en", description="Detected query and response language ('en', 'hi', 'hinglish')")
     grounding_verified: bool = Field(default=True, description="True if output numbers are faithful to row evidence")
     suggested_chart: Optional[str] = Field(default=None, description="Suggested visualization ('bar', 'line', 'pie', 'table')")
     error: Optional[str] = Field(default=None, description="Error or diagnostic detail if query failed")

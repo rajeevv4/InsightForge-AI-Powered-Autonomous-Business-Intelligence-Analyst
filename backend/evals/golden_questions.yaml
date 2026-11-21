@@ -558,3 +558,139 @@ questions:
     reference_sql: "SELECT ROUND(AVG(r.review_score), 2) AS delayed_csat FROM orders o JOIN order_reviews r ON o.order_id = r.order_id WHERE o.order_status = 'delivered' AND o.order_delivered_customer_date > o.order_estimated_delivery_date;"
     expected_intent: "text_to_sql"
     description: "CSAT score on delayed orders"
+
+  # ----------------------------------------------------------------------------
+  # Multilingual Evaluation Questions (Level 4: Hindi & Hinglish - 20 questions)
+  # ----------------------------------------------------------------------------
+  - id: ml_hi_01
+    question: "सबसे ज्यादा बिक्री किस श्रेणी में हुई?"
+    expected_intent: "category_analysis"
+    expected_value: 1233131.72
+    language: "hi"
+    description: "Hindi: Top category sales question"
+
+  - id: ml_hi_02
+    question: "उत्पाद श्रेणियों का कुल राजस्व और हिस्सा दिखाएं"
+    expected_intent: "category_analysis"
+    language: "hi"
+    description: "Hindi: Category revenue breakdown"
+
+  - id: ml_hi_03
+    question: "ब्राजील के किस राज्य से सबसे ज्यादा बिक्री और राजस्व प्राप्त हुआ?"
+    expected_intent: "state_analysis"
+    expected_value: 5769703.15
+    language: "hi"
+    description: "Hindi: Top state revenue (SP)"
+
+  - id: ml_hi_04
+    question: "विभिन्न राज्यों में ग्राहकों की बिक्री का विवरण क्या है?"
+    expected_intent: "state_analysis"
+    language: "hi"
+    description: "Hindi: Regional sales distribution"
+
+  - id: ml_hi_05
+    question: "सर्वश्रेष्ठ प्रदर्शन करने वाला विक्रेता कौन है?"
+    expected_intent: "seller_analysis"
+    expected_value: 229472.63
+    language: "hi"
+    description: "Hindi: Top seller gross revenue"
+
+  - id: ml_hi_06
+    question: "समय पर डिलीवरी (on-time delivery) का प्रतिशत कितना है?"
+    expected_intent: "delivery_analysis"
+    expected_value: 91.90
+    language: "hi"
+    description: "Hindi: On-time delivery SLA compliance"
+
+  - id: ml_hi_07
+    question: "औसत डिलीवरी में कितने दिन लगते हैं?"
+    expected_intent: "delivery_analysis"
+    expected_value: 10.9
+    language: "hi"
+    description: "Hindi: Average delivery days"
+
+  - id: ml_hi_08
+    question: "क्रेडिट कार्ड से कुल कितना भुगतान हुआ?"
+    expected_intent: "payment_analysis"
+    expected_value: 12101094.88
+    language: "hi"
+    description: "Hindi: Credit card payment total"
+
+  - id: ml_hi_09
+    question: "महीने दर महीने बिक्री का क्या रुझान है?"
+    expected_intent: "revenue_trend"
+    language: "hi"
+    description: "Hindi: Monthly sales trend"
+
+  - id: ml_hi_10
+    question: "कुल सकल राजस्व (gross revenue) कितना है?"
+    expected_intent: "kpi_summary"
+    expected_value: 15419773.75
+    language: "hi"
+    description: "Hindi: Executive KPI gross revenue"
+
+  - id: ml_hi_11
+    question: "कुल कितने ऑर्डर सफलतापूर्वक डिलीवर हुए?"
+    expected_intent: "kpi_summary"
+    expected_value: 96478
+    language: "hi"
+    description: "Hindi: Delivered order count"
+
+  - id: ml_hi_12
+    question: "डेटाबेस में डेटा गुणवत्ता की स्थिति क्या है?"
+    expected_intent: "data_quality"
+    language: "hi"
+    description: "Hindi: Data quality audit"
+
+  - id: ml_hi_13
+    question: "क्या बिक्री में कोई असामान्य उछाल या विसंगति पाई गई?"
+    expected_intent: "anomaly_detection"
+    language: "hi"
+    description: "Hindi: Anomaly detection scan"
+
+  - id: ml_hi_14
+    question: "कल का मौसम कैसा रहेगा?"
+    expected_intent: "unknown"
+    language: "hi"
+    description: "Hindi: Out-of-scope question"
+
+  - id: ml_hing_01
+    question: "sabse zyada bikri kis product category mein hui?"
+    expected_intent: "category_analysis"
+    expected_value: 1233131.72
+    language: "hinglish"
+    description: "Hinglish: Top revenue category"
+
+  - id: ml_hing_02
+    question: "kaunse state se sabse jyada customer orders aaye?"
+    expected_intent: "state_analysis"
+    expected_value: 5769703.15
+    language: "hinglish"
+    description: "Hinglish: Top state sales"
+
+  - id: ml_hing_03
+    question: "hamara on-time delivery rate aur delay kitna hai?"
+    expected_intent: "delivery_analysis"
+    expected_value: 91.90
+    language: "hinglish"
+    description: "Hinglish: Delivery SLA performance"
+
+  - id: ml_hing_04
+    question: "sabse popular payment method kaunsa hai?"
+    expected_intent: "payment_analysis"
+    language: "hinglish"
+    description: "Hinglish: Payment method distribution"
+
+  - id: ml_hing_05
+    question: "overall gross revenue aur delivered orders kitne hain?"
+    expected_intent: "kpi_summary"
+    expected_value: 15419773.75
+    language: "hinglish"
+    description: "Hinglish: Gross revenue and delivered orders"
+
+  - id: ml_hing_06
+    question: "kya koi black friday sales spike ya anomaly detect hui?"
+    expected_intent: "anomaly_detection"
+    expected_value: 175178.46
+    language: "hinglish"
+    description: "Hinglish: Black Friday anomaly"

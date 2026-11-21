@@ -28,7 +28,7 @@ from backend.app.database import readonly_engine
 from backend.app.exceptions import DatabaseUnavailableError
 from backend.app.schemas.ai import SQLAskResponse
 from backend.app.services.sql_validator import SQLValidator
-from backend.app.services.ai_service import AIService
+from backend.app.services.ai_service import AIService, detect_language
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter, SUPPORTED_INTENTS
 from backend.app.services.grounding import verify_numeric_grounding
 from backend.app.services.audit_service import AIAuditService
@@ -180,9 +180,20 @@ Validation/Database Error:
 Please fix this error immediately in your new query. Ensure all referenced tables are from the allowed catalog, do not join order_items with order_reviews/payments when summing, and output a valid PostgreSQL SELECT statement.
 """
 
+        lang = detect_language(question)
+        multilingual_rule = ""
+        if lang == "hi":
+            multilingual_rule = "MULTILINGUAL INSTRUCTION: The question is in Hindi (Devanagari). Generate standard PostgreSQL SELECT syntax. Write the 'explanation' in natural Hindi using Devanagari script, but MUST format all numbers using Western digits 0-9 and keep currency as R$ (e.g. 'R$ 13,221,498.11', '96,478')."
+        elif lang == "hinglish":
+            multilingual_rule = "MULTILINGUAL INSTRUCTION: The question is in Hinglish (Hindi in Roman script). Generate standard PostgreSQL SELECT syntax. Write the 'explanation' in natural Hinglish using Roman script, but MUST format all numbers using Western digits 0-9 and keep currency as R$ (e.g. 'R$ 13,221,498.11', '96,478')."
+        else:
+            multilingual_rule = "MULTILINGUAL INSTRUCTION: The question is in English. Generate standard PostgreSQL SELECT syntax. Write the 'explanation' in English using Western digits 0-9 and keep currency as R$."
+
         prompt = f"""
 You are InsightForge's Expert PostgreSQL Data Analyst.
 Your task is to convert the natural language business question into a single, highly performant, guarded PostgreSQL SELECT query.
+
+{multilingual_rule}
 
 {SCHEMA_CATALOG}
 
@@ -195,7 +206,7 @@ USER QUESTION: "{question}"
 You must respond ONLY with a valid JSON object matching the following schema:
 {{
   "sql": "SELECT ...",
-  "explanation": "Concise 1-3 sentence grounded explanation describing what data was calculated to answer the question.",
+  "explanation": "Concise 1-3 sentence grounded explanation in the question language describing what data was calculated to answer the question.",
   "assumptions": ["List of any filters, defaults, or date bounds applied, e.g. order_status='delivered'"],
   "suggested_chart": "bar" | "line" | "pie" | "table"
 }}
@@ -330,6 +341,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         """
         start_time = time.time()
         client = AIService._get_genai_client()
+        language = detect_language(question)
 
         # Step 1: Intent classification check
         if client:
@@ -339,12 +351,14 @@ Do NOT include any markdown code blocks or text outside the JSON object.
 
         intent = classification.get("intent", "unknown")
         confidence = float(classification.get("confidence", 0.0))
+        if classification.get("language"):
+            language = classification["language"]
 
         # Check routing policy: intent confidence >= 0.80 routes to intent router
         if confidence >= 0.80 and intent in SUPPORTED_INTENTS:
             try:
                 evidence_dict = AIAnalyticsRouter.route_intent(intent)
-                answer = AIService.synthesize_explanation_heuristic(question, evidence_dict)
+                answer = AIService.synthesize_explanation_heuristic(question, evidence_dict, language=language)
                 latency_ms = (time.time() - start_time) * 1000.0
 
                 AIAuditService.log(
@@ -369,6 +383,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
                     rows=rows[:500],
                     columns=cols,
                     row_count=len(rows),
+                    language=language,
                     grounding_verified=True,
                     suggested_chart="bar" if len(rows) > 1 else "table",
                     error=None
@@ -400,6 +415,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
                 rows=[],
                 columns=[],
                 row_count=0,
+                language=language,
                 grounding_verified=True,
                 suggested_chart="table",
                 error=err_msg
@@ -426,6 +442,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
                 rows=[],
                 columns=[],
                 row_count=0,
+                language=language,
                 grounding_verified=True,
                 suggested_chart="table",
                 error=gen_result.get("error")
@@ -458,6 +475,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
             rows=rows,
             columns=gen_result["columns"],
             row_count=len(rows),
+            language=language,
             grounding_verified=is_grounded,
             suggested_chart=gen_result.get("suggested_chart", "table"),
             error=None

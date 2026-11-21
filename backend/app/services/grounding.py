@@ -4,10 +4,12 @@ from typing import Any, List, Set
 
 logger = logging.getLogger(__name__)
 
-# Pattern matching formatted numbers: currency, commas, decimals, percentages
-# Matches: R$ 13,221,498.11, 159.83, 96,478, 15.2%, 4.16, -2.5
+DEV_TO_ARABIC = str.maketrans("०१२३४५६७८९", "0123456789")
+
+# Pattern matching formatted numbers: currency, commas (Western & Indian 2/3 digits), decimals, percentages
+# Matches: R$ 13,221,498.11, R$ 12,33,131.72, 159.83, 96,478, 15.2%, 4.16, -2.5
 NUMBER_REGEX = re.compile(
-    r'(?:R\$\s*|₹\s*|\$\s*)?(-?\b\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\b\d+(?:\.\d+)?)\s*(%?)',
+    r'(?:R\$\s*|₹\s*|\$\s*|Rs\.?\s*|रुपये\s*|रु\.?\s*)?(-?\b\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|-?\b\d+(?:\.\d+)?)\s*(%?)',
     re.IGNORECASE
 )
 
@@ -24,16 +26,77 @@ COMMON_METADATA_NUMBERS = {
 }
 
 
+def normalize_multilingual_numbers(text: str) -> str:
+    """
+    Normalizes Devanagari numerals (०-९ -> 0-9) and expands South Asian
+    number scale words (lakh, crore, hazaar in Hindi/English).
+    """
+    if not text:
+        return ""
+
+    # 1. Translate Devanagari digits to standard ASCII Arabic digits
+    normalized = text.translate(DEV_TO_ARABIC)
+
+    # 2. Expand crore / करोड़ / cr
+    def _crore_repl(m):
+        try:
+            val = float(m.group(1).replace(",", ""))
+            return f" {val * 10000000.0:.2f} "
+        except ValueError:
+            return m.group(0)
+
+    normalized = re.sub(
+        r'(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:करोड़|करोड|crores?|cr\b)',
+        _crore_repl,
+        normalized,
+        flags=re.IGNORECASE
+    )
+
+    # 3. Expand lakh / लाख / lac
+    def _lakh_repl(m):
+        try:
+            val = float(m.group(1).replace(",", ""))
+            return f" {val * 100000.0:.2f} "
+        except ValueError:
+            return m.group(0)
+
+    normalized = re.sub(
+        r'(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:लाख|lakhs?|lacs?\b)',
+        _lakh_repl,
+        normalized,
+        flags=re.IGNORECASE
+    )
+
+    # 4. Expand hazaar / हज़ार / hazar
+    def _hazaar_repl(m):
+        try:
+            val = float(m.group(1).replace(",", ""))
+            return f" {val * 1000.0:.2f} "
+        except ValueError:
+            return m.group(0)
+
+    normalized = re.sub(
+        r'(\d+(?:,\d+)*(?:\.\d+)?)\s*(?:हज़ार|हजार|hazaars?|hazars?\b)',
+        _hazaar_repl,
+        normalized,
+        flags=re.IGNORECASE
+    )
+
+    return normalized
+
+
 def extract_numbers_from_text(text: str) -> List[float]:
     """
-    Extract all numeric values from a string, handling currency symbols,
-    thousand-separators (commas), and percentages.
+    Extract all numeric values from a string, handling Devanagari digits,
+    currency symbols, Indian and Western comma formats, lakh/crore, and percentages.
     """
     if not text:
         return []
 
+    norm_text = normalize_multilingual_numbers(text)
     extracted: List[float] = []
-    for match in NUMBER_REGEX.finditer(text):
+
+    for match in NUMBER_REGEX.finditer(norm_text):
         raw_num = match.group(1)
         is_pct = bool(match.group(2))
 

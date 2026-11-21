@@ -2,7 +2,7 @@
 
 > **B.Tech Major Project**  
 > **Authors & Developers**: **Rajeev Karakoti**, **Priyanshu Saklani**, **Prasanna Godiyal**  
-> **Status**: ✅ **Levels 0, 1, 1.5, 2 & 3 Complete — Viva & Production Ready**  
+> **Status**: ✅ **Levels 0, 1, 1.5, 2, 3 & 4 Complete — Viva & Production Ready**  
 > **Dataset**: Olist Brazilian E-Commerce (~100,000 orders, 7 tables, Currency: `R$`)  
 > **Repository**: [InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst](https://github.com/rajeevv4/InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst)
 
@@ -36,6 +36,7 @@ Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 1
 | **Level 1.5** | **Removal of Silent Fixture Fallbacks & Truthful Health** | ✅ **COMPLETE** | • **Zero Silent Fake Data**: Eliminated automatic canonical fallbacks; services raise `DatabaseUnavailableError` unless `USE_FIXTURES=1`.<br>• **HTTP 503 Service Unavailable**: Endpoints return standard 503 `"Database unavailable"` when DB is down.<br>• **Truthful Health & Data Source**: `/api/health` returns `data_source: "postgres" \| "fixture"` and reports `database: "disconnected"` truthfully.<br>• **UI DEMO DATA Badge**: Header displays prominent amber `"DEMO DATA"` badge when operating on fixtures.<br>• **Frontend ErrorBanner**: UI displays `ErrorBanner` on 503s instead of empty/fabricated charts.<br>• **Dual-Mode Eval CLI**: `run_eval.py` supports `--mode heuristic` and `--mode gemini`. |
 | **Level 2** | **Deterministic Multi-Method Anomaly Detection** | ✅ **COMPLETE** | • **Deterministic Engine**: 4 mathematical detection methods (Rolling MAD Robust Z-score, STL decomposition residuals, IQR dimension slices, and IsolationForest multivariate daily vectors).<br>• **Rule 4 & 5 Compliant**: Detection operates purely on real PostgreSQL delivered orders; LLM never detects anomalies.<br>• **Known Event Catalog**: Dynamic labelling of historical shopping holidays (e.g., Nov 2017 Black Friday) as `known_event_candidate` without hardcoded revenue.<br>• **IsolationForest Guardrail**: Requires consensus with univariate methods or marks severity as `low` to avoid spurious false positives.<br>• **REST API & UI**: `GET /api/anomalies`, rate-limited `POST /api/anomalies/scan`, and interactive React Anomalies dashboard with Recharts markers and severity filters. |
 | **Level 3** | **Guarded Text-to-SQL with Semantic Guardrails** | ✅ **COMPLETE** | • **Hybrid Routing Policy**: High-confidence requests ($\ge 0.80$) execute via deterministic intent views; free-form queries route to Guarded Text-to-SQL.<br>• **AST Security Validator**: Built on `sqlglot` AST parsing (not regex): strictly enforces single statement, SELECT-only, function/schema denylist (`pg_sleep`, `pg_catalog`), analytical table allow-list, Cartesian join prohibition, fan-out join rejection, and automatic `LIMIT <= 500`.<br>• **Read-Only Sandbox Execution**: Runs strictly through `insightforge_ro` (5s timeout) with `REVOKE SELECT ON ai_audit_log`.<br>• **Self-Correction Retry Loop**: Automated error diagnosis and AST re-prompting (max 2 retries) upon syntax or schema violations.<br>• **Grounded LLM Explanations**: Regex numeric faithfulness check on generated explanations against returned SQL rows.<br>• **Interactive UI**: "Show SQL" inspection modal, dynamic data table, and automatic Recharts visualization suggestions. |
+| **Level 4** | **Hindi + English Voice Input & Multilingual Answers** | ✅ **COMPLETE** | • **Voice Transcription Endpoint**: `POST /api/voice/transcribe` (multipart audio, max 60s / 10MB; webm, ogg, wav, mp3, m4a with magic byte validation) powered by Gemini audio processing.<br>• **Zero Persistence Audio**: Ephemeral in-memory audio buffer, zero disk/database persistence; operational metadata (duration, language, status) logged to `ai_audit_log`.<br>• **Multilingual Understanding**: Gemini & heuristic intent classifiers accepting Hindi (Devanagari), Hinglish, and English with word boundary regex.<br>• **Language-Preserving Grounded Synthesis**: Matches response language to user question, formats numbers strictly with Western digits (0-9) and `R$` currency prefix.<br>• **Extended Grounding Verifier**: Devanagari digit translation (`०-९` $\rightarrow$ `0-9`) and South Asian numeric scale normalization (`lakh`/`लाख`, `crore`/`करोड़`).<br>• **Voice-Enabled Frontend**: Mic recording with live countdown timer, audio wave animation, editable transcript box (never auto-sends), browser Web Speech API fallback, and native "Read Aloud" Web SpeechSynthesis button. |
 
 ---
 
@@ -58,36 +59,40 @@ InsightForge/
 │   │   ├── schemas/                  # Pydantic validation schemas
 │   │   │   ├── ai.py                 # AskAIRequest, AskAIResponse, AIAuditLogItem
 │   │   │   ├── anomaly.py            # AnomalyItem, TimeSeriesPoint, ScanRequest/Response
-│   │   │   └── kpis.py               # KPISummaryResponse schema
+│   │   │   ├── kpis.py               # KPISummaryResponse schema
+│   │   │   └── voice.py              # VoiceTranscribeResponse schema
 │   │   ├── services/                 # Business logic service layer
 │   │   │   ├── analytics_service.py  # Trusted analytics functions
 │   │   │   ├── anomaly_service.py    # Deterministic anomaly detection (MAD, STL, IQR, IsolationForest)
 │   │   │   ├── data_quality_service.py # 10-check data quality audit engine
 │   │   │   ├── ai_analytics_router.py # Controlled intent-to-view router
-│   │   │   ├── ai_service.py         # Gemini classifier & grounded synthesizer
+│   │   │   ├── ai_service.py         # Gemini classifier & grounded synthesizer (Hindi, Hinglish, English)
 │   │   │   ├── sql_validator.py      # sqlglot AST SQL injection & safety validator
 │   │   │   ├── text_to_sql_service.py# Guarded Text-to-SQL engine with self-correction
 │   │   │   ├── audit_service.py      # AI interaction audit logger
-│   │   │   └── grounding.py          # Deterministic regex numeric faithfulness verifier
+│   │   │   ├── grounding.py          # Deterministic regex numeric faithfulness & Indian scale verifier
+│   │   │   └── voice_service.py      # Gemini audio transcription & in-memory MIME validator
 │   │   └── routers/                  # Modular REST API endpoints
 │   │       ├── health.py             # Health check endpoint
 │   │       ├── kpis.py               # Canonical KPI summary endpoint
 │   │       ├── analytics.py          # Category, revenue, state, seller, delivery endpoints
 │   │       ├── data_quality.py       # Data quality audit endpoint
 │   │       ├── anomalies.py          # GET /api/anomalies & POST /api/anomalies/scan
-│   │       └── ai.py                 # POST /api/ai/ask, POST /api/ai/sql-ask & GET /api/ai/history
+│   │       ├── ai.py                 # POST /api/ai/ask, POST /api/ai/sql-ask & GET /api/ai/history
+│   │       └── voice.py              # POST /api/voice/transcribe (rate-limited, zero-persistence)
 │   ├── evals/
-│   │   ├── golden_questions.yaml     # 93 structured evaluation test cases (intent + SQL)
+│   │   ├── golden_questions.yaml     # 113 structured evaluation test cases (intent, SQL & multilingual)
 │   │   └── run_eval.py               # Dual-mode benchmark (--mode heuristic | gemini | sql)
-│   └── tests/                        # 65+ unit tests
+│   └── tests/                        # 90+ unit tests
 │       ├── test_api.py               # Core REST API endpoint tests
 │       ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
 │       ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
 │       ├── test_sql_security.py      # Level 3 AST validator, SQL injection & routing tests
-│       ├── test_grounding.py         # Grounding verifier & hallucination detection tests
+│       ├── test_grounding.py         # Grounding verifier, Devanagari & scale tests
 │       ├── test_audit_service.py     # AI audit logging & ring-buffer tests
 │       ├── test_fixture_guard.py     # Rule 5 fixture enforcement tests
-│       └── test_database_unavailable.py # Level 1.5 DB down 503 and fixture badge tests
+│       ├── test_database_unavailable.py # Level 1.5 DB down 503 and fixture badge tests
+│       └── test_voice_multilingual.py # Level 4 Voice audio, MIME, Hindi NLP & TTS tests
 ├── database/
 │   ├── schema.sql                    # PostgreSQL DDL schema & table constraints
 │   ├── views.sql                     # Analytical views with CTE fan-out prevention

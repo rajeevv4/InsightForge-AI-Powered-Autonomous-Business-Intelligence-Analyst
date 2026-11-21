@@ -29,6 +29,7 @@ class Settings:
 
     # Rate Limiting
     RATE_LIMIT_AI_ASK: str = os.getenv("RATE_LIMIT_AI_ASK", "30/minute")
+    RATE_LIMIT_VOICE_TRANSCRIBE: str = os.getenv("RATE_LIMIT_VOICE_TRANSCRIBE", "10/minute")
 
 
 settings = Settings()

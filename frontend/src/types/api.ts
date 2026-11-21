@@ -110,6 +110,7 @@ export interface AskAIResponse {
   reason: string;
   answer: string;
   evidence?: AIEvidence | null;
+  language?: 'en' | 'hi' | 'hinglish' | string;
   rephrase_suggested?: boolean;
 }
 
@@ -122,9 +123,17 @@ export interface SQLAskResponse {
   rows?: Record<string, any>[] | null;
   columns?: string[] | null;
   row_count: number;
+  language?: 'en' | 'hi' | 'hinglish' | string;
   grounding_verified: boolean;
   suggested_chart?: 'bar' | 'line' | 'pie' | 'table' | null;
   error?: string | null;
+}
+
+export interface VoiceTranscribeResponse {
+  text: string;
+  detected_language: 'hi' | 'en' | 'hinglish' | string;
+  confidence: number;
+  duration_est_s?: number | null;
 }
 
 export interface AnomalyItem {
