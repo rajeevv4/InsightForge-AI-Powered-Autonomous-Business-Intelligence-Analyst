@@ -8,7 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from backend.app.config import settings
 from backend.app.exceptions import DatabaseUnavailableError
 from backend.app.limiter import limiter
-from backend.app.routers import health, kpis, analytics, data_quality, ai, anomalies, voice
+from backend.app.routers import health, kpis, analytics, data_quality, ai, anomalies, voice, datasets
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ app.include_router(data_quality.router, prefix=settings.API_PREFIX)
 app.include_router(ai.router, prefix=settings.API_PREFIX)
 app.include_router(anomalies.router, prefix=settings.API_PREFIX)
 app.include_router(voice.router, prefix=settings.API_PREFIX)
+app.include_router(datasets.router, prefix=settings.API_PREFIX)
 
 @app.get("/")
 def root():

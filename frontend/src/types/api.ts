@@ -182,3 +182,98 @@ export interface AnomalyScanResponse {
   anomalies: AnomalyItem[];
 }
 
+export interface ColumnProfile {
+  id?: string;
+  original_name: string;
+  safe_name: string;
+  pg_type: string;
+  role: 'id' | 'datetime' | 'measure' | 'dimension' | 'boolean' | 'free_text';
+  null_pct: number;
+  distinct_count: number;
+  min_val?: string | null;
+  max_val?: string | null;
+  stats: Record<string, any>;
+  user_description?: string | null;
+}
+
+export interface QualityFinding {
+  type: string;
+  column?: string;
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  description?: string;
+}
+
+export interface TableProfile {
+  id?: string;
+  original_name: string;
+  safe_name: string;
+  row_count: number;
+  column_count: number;
+  candidate_pk?: string | null;
+  candidate_time_column?: string | null;
+  quality_findings: QualityFinding[];
+  columns: ColumnProfile[];
+}
+
+export interface RelationshipProfile {
+  id?: string;
+  parent_table: string;
+  parent_column: string;
+  child_table: string;
+  child_column: string;
+  cardinality: '1:1' | '1:N';
+  confidence: number;
+  confirmed: boolean;
+}
+
+export interface DatasetSummary {
+  id: string;
+  name: string;
+  schema_name: string;
+  status: string;
+  share_samples: boolean;
+  table_count: number;
+  total_rows: number;
+  size_bytes: number;
+  created_at?: string | null;
+  expires_at?: string | null;
+  is_demo: boolean;
+}
+
+export interface DatasetProfile {
+  id: string;
+  name: string;
+  schema_name: string;
+  status: string;
+  share_samples: boolean;
+  source_files: string[];
+  size_bytes: number;
+  created_at?: string | null;
+  expires_at?: string | null;
+  is_demo: boolean;
+  tables: TableProfile[];
+  relationships: RelationshipProfile[];
+}
+
+export interface UploadDatasetResponse {
+  dataset_id: string;
+  name: string;
+  schema_name: string;
+  owner_token?: string | null;
+  tables_count: number;
+  total_rows: number;
+  expires_at?: string | null;
+  message: string;
+}
+
+export interface TablePreviewResponse {
+  dataset_id: string;
+  table_name: string;
+  total_rows: number;
+  preview_rows_count: number;
+  columns: string[];
+  rows: Record<string, any>[];
+}
+
+

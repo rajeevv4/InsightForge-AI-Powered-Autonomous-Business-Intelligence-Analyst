@@ -14,10 +14,23 @@ import {
   AnomalyScanRequest,
   AnomalyScanResponse,
   SQLAskResponse,
-  VoiceTranscribeResponse
+  VoiceTranscribeResponse,
+  DatasetSummary,
+  DatasetProfile,
+  UploadDatasetResponse,
+  TablePreviewResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
+
+const getOwnerToken = (): string => {
+  let token = localStorage.getItem('insightforge_owner_token');
+  if (!token) {
+    token = 'own_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('insightforge_owner_token', token);
+  }
+  return token;
+};
 
 const client = axios.create({
   baseURL: API_BASE_URL,
@@ -107,6 +120,70 @@ export const api = {
       timeout: 30000,
     });
     return res.data;
+  },
+
+  getDatasets: async (): Promise<DatasetSummary[]> => {
+    const res = await client.get<DatasetSummary[]>('/datasets', {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  getDatasetProfile: async (id: string): Promise<DatasetProfile> => {
+    const res = await client.get<DatasetProfile>(`/datasets/${id}`, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  uploadDataset: async (files: File[], datasetName?: string, shareSamples: boolean = false): Promise<UploadDatasetResponse> => {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    if (datasetName && datasetName.trim()) {
+      formData.append('dataset_name', datasetName.trim());
+    }
+    formData.append('share_samples', String(shareSamples));
+
+    const res = await client.post<UploadDatasetResponse>('/datasets', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'X-Owner-Token': getOwnerToken(),
+      },
+      timeout: 60000,
+    });
+
+    if (res.data.owner_token) {
+      localStorage.setItem('insightforge_owner_token', res.data.owner_token);
+    }
+    return res.data;
+  },
+
+  updateDataset: async (
+    id: string,
+    updates: {
+      share_samples?: boolean;
+      column_updates?: Array<{ table_name: string; column_name: string; role?: string; user_description?: string }>;
+      confirmed_relationships?: Array<{ parent_table: string; parent_column: string; child_table: string; child_column: string; confirmed: boolean }>;
+    }
+  ): Promise<DatasetProfile> => {
+    const res = await client.patch<DatasetProfile>(`/datasets/${id}/columns`, updates, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  previewDatasetTable: async (id: string, table: string, limit: number = 50): Promise<TablePreviewResponse> => {
+    const res = await client.get<TablePreviewResponse>(`/datasets/${id}/preview`, {
+      params: { table, limit },
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  deleteDataset: async (id: string): Promise<void> => {
+    await client.delete(`/datasets/${id}`, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
   },
 };
 

@@ -30,6 +30,15 @@ class Settings:
     # Rate Limiting
     RATE_LIMIT_AI_ASK: str = os.getenv("RATE_LIMIT_AI_ASK", "30/minute")
     RATE_LIMIT_VOICE_TRANSCRIBE: str = os.getenv("RATE_LIMIT_VOICE_TRANSCRIBE", "10/minute")
+    RATE_LIMIT_DATASET_UPLOAD: str = os.getenv("RATE_LIMIT_DATASET_UPLOAD", "5/hour")
+
+    # Dataset Workspace Limits (Level 5)
+    MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "25"))
+    MAX_ROWS_PER_TABLE: int = int(os.getenv("MAX_ROWS_PER_TABLE", "200000"))
+    MAX_COLUMNS_PER_TABLE: int = int(os.getenv("MAX_COLUMNS_PER_TABLE", "100"))
+    MAX_DATASETS_PER_OWNER: int = int(os.getenv("MAX_DATASETS_PER_OWNER", "3"))
+    DATASET_EXPIRY_HOURS: int = int(os.getenv("DATASET_EXPIRY_HOURS", "24"))
+    MAX_TOTAL_DB_MB: int = int(os.getenv("MAX_TOTAL_DB_MB", "450"))
 
 
 settings = Settings()

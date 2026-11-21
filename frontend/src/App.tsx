@@ -6,6 +6,7 @@ import { AskPage } from './pages/AskPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DataQualityPage } from './pages/DataQualityPage';
 import { AnomaliesPage } from './pages/AnomaliesPage';
+import { DatasetsPage } from './pages/DatasetsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
           <Route path="delivery" element={<AnalyticsPage initialTab="delivery" />} />
           <Route path="data-quality" element={<DataQualityPage />} />
           <Route path="anomalies" element={<AnomaliesPage />} />
+          <Route path="datasets" element={<DatasetsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="help" element={<HelpPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

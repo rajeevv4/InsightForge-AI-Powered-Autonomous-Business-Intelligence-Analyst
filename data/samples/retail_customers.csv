@@ -1,0 +1,101 @@
+customer_id,customer_name,customer_city,signup_date,is_vip
+CUST_0001,Customer 1,Rio de Janeiro,2023-002-15,False
+CUST_0002,Customer 2,Curitiba,2023-003-15,False
+CUST_0003,Customer 3,Belo Horizonte,2023-004-15,True
+CUST_0004,Customer 4,São Paulo,2023-005-15,False
+CUST_0005,Customer 5,Rio de Janeiro,2023-006-15,False
+CUST_0006,Customer 6,Curitiba,2023-007-15,True
+CUST_0007,Customer 7,Belo Horizonte,2023-008-15,False
+CUST_0008,Customer 8,São Paulo,2023-009-15,False
+CUST_0009,Customer 9,Rio de Janeiro,2023-001-15,True
+CUST_0010,Customer 10,Curitiba,2023-002-15,False
+CUST_0011,Customer 11,Belo Horizonte,2023-003-15,False
+CUST_0012,Customer 12,São Paulo,2023-004-15,True
+CUST_0013,Customer 13,Rio de Janeiro,2023-005-15,False
+CUST_0014,Customer 14,Curitiba,2023-006-15,False
+CUST_0015,Customer 15,Belo Horizonte,2023-007-15,True
+CUST_0016,Customer 16,São Paulo,2023-008-15,False
+CUST_0017,Customer 17,Rio de Janeiro,2023-009-15,False
+CUST_0018,Customer 18,Curitiba,2023-001-15,True
+CUST_0019,Customer 19,Belo Horizonte,2023-002-15,False
+CUST_0020,Customer 20,São Paulo,2023-003-15,False
+CUST_0021,Customer 21,Rio de Janeiro,2023-004-15,True
+CUST_0022,Customer 22,Curitiba,2023-005-15,False
+CUST_0023,Customer 23,Belo Horizonte,2023-006-15,False
+CUST_0024,Customer 24,São Paulo,2023-007-15,True
+CUST_0025,Customer 25,Rio de Janeiro,2023-008-15,False
+CUST_0026,Customer 26,Curitiba,2023-009-15,False
+CUST_0027,Customer 27,Belo Horizonte,2023-001-15,True
+CUST_0028,Customer 28,São Paulo,2023-002-15,False
+CUST_0029,Customer 29,Rio de Janeiro,2023-003-15,False
+CUST_0030,Customer 30,Curitiba,2023-004-15,True
+CUST_0031,Customer 31,Belo Horizonte,2023-005-15,False
+CUST_0032,Customer 32,São Paulo,2023-006-15,False
+CUST_0033,Customer 33,Rio de Janeiro,2023-007-15,True
+CUST_0034,Customer 34,Curitiba,2023-008-15,False
+CUST_0035,Customer 35,Belo Horizonte,2023-009-15,False
+CUST_0036,Customer 36,São Paulo,2023-001-15,True
+CUST_0037,Customer 37,Rio de Janeiro,2023-002-15,False
+CUST_0038,Customer 38,Curitiba,2023-003-15,False
+CUST_0039,Customer 39,Belo Horizonte,2023-004-15,True
+CUST_0040,Customer 40,São Paulo,2023-005-15,False
+CUST_0041,Customer 41,Rio de Janeiro,2023-006-15,False
+CUST_0042,Customer 42,Curitiba,2023-007-15,True
+CUST_0043,Customer 43,Belo Horizonte,2023-008-15,False
+CUST_0044,Customer 44,São Paulo,2023-009-15,False
+CUST_0045,Customer 45,Rio de Janeiro,2023-001-15,True
+CUST_0046,Customer 46,Curitiba,2023-002-15,False
+CUST_0047,Customer 47,Belo Horizonte,2023-003-15,False
+CUST_0048,Customer 48,São Paulo,2023-004-15,True
+CUST_0049,Customer 49,Rio de Janeiro,2023-005-15,False
+CUST_0050,Customer 50,Curitiba,2023-006-15,False
+CUST_0051,Customer 51,Belo Horizonte,2023-007-15,True
+CUST_0052,Customer 52,São Paulo,2023-008-15,False
+CUST_0053,Customer 53,Rio de Janeiro,2023-009-15,False
+CUST_0054,Customer 54,Curitiba,2023-001-15,True
+CUST_0055,Customer 55,Belo Horizonte,2023-002-15,False
+CUST_0056,Customer 56,São Paulo,2023-003-15,False
+CUST_0057,Customer 57,Rio de Janeiro,2023-004-15,True
+CUST_0058,Customer 58,Curitiba,2023-005-15,False
+CUST_0059,Customer 59,Belo Horizonte,2023-006-15,False
+CUST_0060,Customer 60,São Paulo,2023-007-15,True
+CUST_0061,Customer 61,Rio de Janeiro,2023-008-15,False
+CUST_0062,Customer 62,Curitiba,2023-009-15,False
+CUST_0063,Customer 63,Belo Horizonte,2023-001-15,True
+CUST_0064,Customer 64,São Paulo,2023-002-15,False
+CUST_0065,Customer 65,Rio de Janeiro,2023-003-15,False
+CUST_0066,Customer 66,Curitiba,2023-004-15,True
+CUST_0067,Customer 67,Belo Horizonte,2023-005-15,False
+CUST_0068,Customer 68,São Paulo,2023-006-15,False
+CUST_0069,Customer 69,Rio de Janeiro,2023-007-15,True
+CUST_0070,Customer 70,Curitiba,2023-008-15,False
+CUST_0071,Customer 71,Belo Horizonte,2023-009-15,False
+CUST_0072,Customer 72,São Paulo,2023-001-15,True
+CUST_0073,Customer 73,Rio de Janeiro,2023-002-15,False
+CUST_0074,Customer 74,Curitiba,2023-003-15,False
+CUST_0075,Customer 75,Belo Horizonte,2023-004-15,True
+CUST_0076,Customer 76,São Paulo,2023-005-15,False
+CUST_0077,Customer 77,Rio de Janeiro,2023-006-15,False
+CUST_0078,Customer 78,Curitiba,2023-007-15,True
+CUST_0079,Customer 79,Belo Horizonte,2023-008-15,False
+CUST_0080,Customer 80,São Paulo,2023-009-15,False
+CUST_0081,Customer 81,Rio de Janeiro,2023-001-15,True
+CUST_0082,Customer 82,Curitiba,2023-002-15,False
+CUST_0083,Customer 83,Belo Horizonte,2023-003-15,False
+CUST_0084,Customer 84,São Paulo,2023-004-15,True
+CUST_0085,Customer 85,Rio de Janeiro,2023-005-15,False
+CUST_0086,Customer 86,Curitiba,2023-006-15,False
+CUST_0087,Customer 87,Belo Horizonte,2023-007-15,True
+CUST_0088,Customer 88,São Paulo,2023-008-15,False
+CUST_0089,Customer 89,Rio de Janeiro,2023-009-15,False
+CUST_0090,Customer 90,Curitiba,2023-001-15,True
+CUST_0091,Customer 91,Belo Horizonte,2023-002-15,False
+CUST_0092,Customer 92,São Paulo,2023-003-15,False
+CUST_0093,Customer 93,Rio de Janeiro,2023-004-15,True
+CUST_0094,Customer 94,Curitiba,2023-005-15,False
+CUST_0095,Customer 95,Belo Horizonte,2023-006-15,False
+CUST_0096,Customer 96,São Paulo,2023-007-15,True
+CUST_0097,Customer 97,Rio de Janeiro,2023-008-15,False
+CUST_0098,Customer 98,Curitiba,2023-009-15,False
+CUST_0099,Customer 99,Belo Horizonte,2023-001-15,True
+CUST_0100,Customer 100,São Paulo,2023-002-15,False

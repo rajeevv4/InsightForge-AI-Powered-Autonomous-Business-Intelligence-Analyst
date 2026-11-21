@@ -70,6 +70,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, health }) => {
           title: 'Statistical Anomalies',
           description: 'Deterministic outlier detection across e-commerce time series and business dimensions.'
         };
+      case '/datasets':
+        return {
+          title: 'Dataset Workspace',
+          description: 'Upload tabular files (CSV, TSV, XLSX) into isolated schemas with deterministic zero-LLM profiling.'
+        };
       case '/settings':
         return {
           title: 'Settings',

@@ -15,7 +15,8 @@ import {
   Settings,
   HelpCircle,
   X,
-  Layers
+  Layers,
+  Database
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
 
   const mainNavItems = [
     { name: 'Overview', path: '/', icon: LayoutDashboard },
+    { name: 'Datasets', path: '/datasets', icon: Database },
     { name: 'Ask InsightForge', path: '/ask', icon: Sparkles },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
     { name: 'Customers', path: '/customers', icon: Users },

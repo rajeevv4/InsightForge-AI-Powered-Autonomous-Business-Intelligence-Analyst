@@ -13,6 +13,11 @@ def is_fixture_mode_allowed() -> bool:
     return env_val in ("1", "true", "yes")
 
 
+def is_fixture_mode() -> bool:
+    """Alias for is_fixture_mode_allowed()."""
+    return is_fixture_mode_allowed()
+
+
 def assert_database_available(error: Exception, operation: str) -> None:
     """
     Raises a DatabaseUnavailableError when PostgreSQL is unreachable and USE_FIXTURES != 1.
