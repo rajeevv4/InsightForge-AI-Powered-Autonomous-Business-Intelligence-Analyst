@@ -222,7 +222,7 @@ class AIService:
         return {"intent": "unknown", "confidence": 0.30, "reason": "Could not confidently match question to supported business intents."}
 
     @classmethod
-    def classify_intent_gemini(cls, client: Any, question: str) -> Dict[str, Any]:
+    def classify_intent_gemini(cls, client: Any, question: str, raise_on_error: bool = False) -> Dict[str, Any]:
         """
         Classifies user question into supported intent using Gemini API with structured JSON output.
         Accepts questions in English, Hindi (Devanagari), or Hinglish.
@@ -283,6 +283,8 @@ User Question: "{question}"
             return {"intent": intent, "confidence": confidence, "reason": reason, "language": res_lang}
 
         except Exception as e:
+            if raise_on_error:
+                raise
             logger.error(f"Gemini classification failed: {e}. Falling back to heuristic classifier.")
             res = cls.classify_intent_heuristic(question)
             res["language"] = lang
@@ -589,7 +591,7 @@ User Question: "{question}"
         return f"Analytics query for intent '{intent}' executed successfully against PostgreSQL. Evidence data loaded."
 
     @classmethod
-    def synthesize_explanation_gemini(cls, client: Any, question: str, evidence: Dict[str, Any], language: Optional[str] = None) -> str:
+    def synthesize_explanation_gemini(cls, client: Any, question: str, evidence: Dict[str, Any], language: Optional[str] = None, raise_on_error: bool = False) -> str:
         """
         Synthesizes grounded explanation using Gemini API based strictly on provided evidence.
         Respects question language (Hindi, Hinglish, English) while strictly maintaining Western digits 0-9.
@@ -640,6 +642,8 @@ User Question: "{question}"
             if answer:
                 return answer
         except Exception as e:
+            if raise_on_error:
+                raise
             logger.error(f"Gemini synthesis failed: {e}. Falling back to heuristic synthesis.")
 
         return cls.synthesize_explanation_heuristic(question, evidence, language=language)

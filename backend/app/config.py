@@ -43,5 +43,10 @@ class Settings:
     XLSX_MAX_SHEETS: int = int(os.getenv("XLSX_MAX_SHEETS", "20"))
     XLSX_MAX_UNCOMPRESSED_MB: int = int(os.getenv("XLSX_MAX_UNCOMPRESSED_MB", "500"))
 
+    # Proxy and abuse controls
+    TRUSTED_PROXIES_ENABLED: bool = os.getenv("TRUSTED_PROXIES_ENABLED", "false").lower() in ("true", "1", "yes")
+    MAX_DATASETS_PER_IP_PER_DAY: int = int(os.getenv("MAX_DATASETS_PER_IP_PER_DAY", "20"))
+    MAX_GLOBAL_DATASETS: int = int(os.getenv("MAX_GLOBAL_DATASETS", "100"))
+
 
 settings = Settings()

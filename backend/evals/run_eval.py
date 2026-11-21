@@ -16,9 +16,12 @@ import os
 import re
 import json
 import time
+import hashlib
+import threading
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 # Enable fixtures for offline evaluation runner
@@ -29,12 +32,79 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app.config import settings
 from backend.app.services.ai_service import AIService, detect_language
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter
 from backend.app.services.grounding import (
     extract_numbers_from_text,
     verify_numeric_grounding
 )
+
+# On-disk Gemini response cache directory & file
+CACHE_DIR = Path(__file__).resolve().parent / ".cache"
+CACHE_FILE = CACHE_DIR / "gemini_eval_cache.json"
+
+
+class GeminiEvalCache:
+    """Thread-safe persistent cache for Gemini evaluation calls keyed by model + prompt."""
+
+    def __init__(self, enabled: bool = True):
+        self.enabled = enabled
+        self._lock = threading.Lock()
+        self._data: Dict[str, Any] = {}
+        if self.enabled:
+            self._load()
+
+    def _load(self):
+        try:
+            if CACHE_FILE.exists():
+                with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                    self._data = json.load(f)
+        except Exception:
+            self._data = {}
+
+    def get(self, model: str, prompt: str) -> Optional[Any]:
+        if not self.enabled:
+            return None
+        key = hashlib.sha256(f"{model}:{prompt}".encode("utf-8")).hexdigest()
+        with self._lock:
+            entry = self._data.get(key)
+            if entry and isinstance(entry, dict):
+                return entry.get("response")
+        return None
+
+    def set(self, model: str, prompt: str, prompt_type: str, response: Any):
+        if not self.enabled:
+            return
+        key = hashlib.sha256(f"{model}:{prompt}".encode("utf-8")).hexdigest()
+        with self._lock:
+            self._data[key] = {
+                "model": model,
+                "prompt_type": prompt_type,
+                "prompt": prompt[:300],
+                "response": response,
+                "cached_at": time.time()
+            }
+            try:
+                CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self._data, f, indent=2)
+            except Exception:
+                pass
+
+
+def call_gemini_with_backoff(func, *args, max_retries: int = 4, base_delay: float = 2.0, **kwargs):
+    """Executes a Gemini API call with exponential backoff on 429/ResourceExhausted errors."""
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            err_str = str(e)
+            if ("RESOURCE_EXHAUSTED" in err_str or "429" in err_str) and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                time.sleep(delay)
+                continue
+            raise
 
 # Canonical offline evidence mocks for deterministic, database-independent evaluations
 CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
@@ -263,7 +333,7 @@ def check_numeric_match(answer_text: str, expected_val: float, tolerance_pct: fl
     return False
 
 
-def run_sql_evaluations(questions_path: Optional[str] = None) -> bool:
+def run_sql_evaluations(questions_path: Optional[str] = None, limit: Optional[int] = None) -> bool:
     """
     Evaluates dynamic Text-to-SQL queries against live PostgreSQL.
     Strictly requires live PostgreSQL and GEMINI_API_KEY (no fixtures or fake data).
@@ -299,6 +369,9 @@ def run_sql_evaluations(questions_path: Optional[str] = None) -> bool:
 
     all_questions = load_golden_questions(questions_path=questions_path)
     sql_questions = [q for q in all_questions if q.get("id", "").startswith("sql_") or q.get("expected_intent") == "text_to_sql"]
+
+    if limit is not None and limit > 0:
+        sql_questions = sql_questions[:limit]
 
     if not sql_questions:
         print(f"No SQL benchmark questions found in {questions_path or 'golden_questions.yaml'}.")
@@ -465,11 +538,20 @@ def run_sql_evaluations(questions_path: Optional[str] = None) -> bool:
     return validity_rate >= 80.0
 
 
-def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path: Optional[str] = None) -> bool:
+def run_evaluations(
+    mode: str = "heuristic",
+    live: bool = False,
+    questions_path: Optional[str] = None,
+    limit: Optional[int] = None,
+    no_cache: bool = False
+) -> bool:
     if live and "USE_FIXTURES" in os.environ:
         del os.environ["USE_FIXTURES"]
     all_questions = load_golden_questions(questions_path=questions_path)
     questions = [q for q in all_questions if not q.get("id", "").startswith("sql_")]
+    if limit is not None and limit > 0:
+        questions = questions[:limit]
+
     mode_upper = mode.upper()
     evidence_source = "LIVE DATABASE (PostgreSQL schema insightforge)" if live else "CANONICAL FIXTURES (Offline Benchmark)"
     print("=" * 82)
@@ -484,35 +566,24 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
             from backend.app.services.anomaly_service import AnomalyService
             live_scan = AnomalyService.run_full_scan(grain="daily")
             live_anomaly_count = live_scan.anomalies_detected
-        except Exception as e:
+        except Exception:
             live_anomaly_count = None
 
     client = None
-    gemini_quota_hit = False  # tracks if quota was exhausted mid-run
+    eval_cache = GeminiEvalCache(enabled=(not no_cache))
+    quota_state = {"exhausted": False}
+
     if mode == "gemini":
-        # Support a separate eval key to avoid sharing quota with the live API key
         eval_key = os.environ.get("GEMINI_API_KEY_EVAL") or os.environ.get("GEMINI_API_KEY", "")
         if eval_key:
-            os.environ["GEMINI_API_KEY"] = eval_key  # patch so AIService picks it up
+            os.environ["GEMINI_API_KEY"] = eval_key
         client = AIService._get_genai_client()
         if not client:
             print("❌ ERROR: Gemini mode requested but GEMINI_API_KEY is not configured or google-genai is missing.")
             print("Please set GEMINI_API_KEY (or GEMINI_API_KEY_EVAL) in your environment or .env file.")
             return False
 
-    results = []
-    intent_correct = 0
-    numeric_total = 0
-    numeric_correct = 0
-
-    category_stats: Dict[str, Dict[str, int]] = {}
-    language_stats: Dict[str, Dict[str, int]] = {
-        "en": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
-        "hi": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
-        "hinglish": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
-    }
-
-    for q in questions:
+    def process_case(q: Dict[str, Any]) -> Dict[str, Any]:
         qid = q["id"]
         qtext = q["question"]
         expected_intent = q["expected_intent"]
@@ -520,68 +591,62 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
         if qid == "anom_02" and live and live_anomaly_count is not None:
             expected_val = float(live_anomaly_count)
         qlang = q.get("language") or detect_language(qtext)
-        if qlang not in language_stats:
-            language_stats[qlang] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
-
         prefix = qid.split("_")[0]
-        if prefix not in category_stats:
-            category_stats[prefix] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
-        category_stats[prefix]["total"] += 1
-        language_stats[qlang]["total"] += 1
+
+        intent_source = "heuristic"
+        actual_intent = "unknown"
+        conf = 0.0
 
         # 1. Intent Classification
-        if mode == "gemini" and client and not gemini_quota_hit:
-            try:
-                classification = AIService.classify_intent_gemini(client, qtext)
-            except Exception as e:
-                err_str = str(e)
-                if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
-                    gemini_quota_hit = True
-                    print(f"  [GEMINI QUOTA] {qid}: NOT RUN (AI quota exhausted — remaining cases will show NOT_RUN)")
-                    # Mark as skipped: do not count in numerator or denominator
-                    results.append({
-                        "id": qid, "prefix": prefix,
-                        "question": qtext[:42] + ("..." if len(qtext) > 42 else ""),
-                        "expected_intent": expected_intent, "actual_intent": "NOT_RUN_QUOTA",
-                        "intent_match": None, "expected_val": expected_val, "num_match": None
-                    })
-                    continue
-                # Other Gemini errors: fall back to heuristic but flag it
-                print(f"  [GEMINI ERROR] {qid}: {err_str[:80]} — falling back to heuristic")
-                classification = AIService.classify_intent_heuristic(qtext)
-        elif mode == "gemini" and gemini_quota_hit:
-            # Quota already exhausted: skip this case entirely
-            results.append({
-                "id": qid, "prefix": prefix,
-                "question": qtext[:42] + ("..." if len(qtext) > 42 else ""),
-                "expected_intent": expected_intent, "actual_intent": "NOT_RUN_QUOTA",
-                "intent_match": None, "expected_val": expected_val, "num_match": None
-            })
-            continue
+        if mode == "gemini" and client:
+            if quota_state["exhausted"]:
+                actual_intent = "NOT_RUN_QUOTA"
+                intent_source = "not_run_quota"
+            else:
+                cached_intent = eval_cache.get(settings.GEMINI_MODEL, f"classify:{qtext}")
+                if cached_intent:
+                    classification = cached_intent
+                    actual_intent = classification["intent"]
+                    conf = classification["confidence"]
+                    intent_source = "cached"
+                else:
+                    try:
+                        classification = call_gemini_with_backoff(AIService.classify_intent_gemini, client, qtext, raise_on_error=True)
+                        eval_cache.set(settings.GEMINI_MODEL, f"classify:{qtext}", "classify", classification)
+                        actual_intent = classification["intent"]
+                        conf = classification["confidence"]
+                        intent_source = "live"
+                    except Exception as e:
+                        err_str = str(e)
+                        if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                            quota_state["exhausted"] = True
+                            actual_intent = "NOT_RUN_QUOTA"
+                            intent_source = "not_run_quota"
+                        else:
+                            classification = AIService.classify_intent_heuristic(qtext)
+                            actual_intent = classification["intent"]
+                            conf = classification["confidence"]
+                            intent_source = "fallback_heuristic"
         else:
             classification = AIService.classify_intent_heuristic(qtext)
+            actual_intent = classification["intent"]
+            conf = classification["confidence"]
+            intent_source = "heuristic"
 
-        actual_intent = classification["intent"]
-        conf = classification["confidence"]
-
-        # Resolve intent match (for out-of-scope / unknown, low confidence counts as unknown)
-        if expected_intent == "unknown":
+        # Resolve intent match
+        if actual_intent == "NOT_RUN_QUOTA":
+            intent_match = None
+        elif expected_intent == "unknown":
             intent_match = (actual_intent == "unknown" or conf < 0.60)
         else:
             intent_match = (actual_intent == expected_intent)
 
-        if intent_match:
-            intent_correct += 1
-            category_stats[prefix]["intent_ok"] += 1
-            language_stats[qlang]["intent_ok"] += 1
+        # 2. Numeric Faithfulness
+        numeric_source = None
+        num_match = None
+        quota_skipped_numeric = False
 
-        # 2. Numeric Faithfulness Check (if question has expected numeric answer)
-        num_match: Optional[bool] = None
         if expected_val is not None:
-            numeric_total += 1
-            category_stats[prefix]["num_total"] += 1
-            language_stats[qlang]["num_total"] += 1
-
             if live:
                 try:
                     evidence = AIAnalyticsRouter.route_intent(expected_intent)
@@ -594,7 +659,6 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
                 target_val = float(expected_val)
                 ev_data = evidence.get("data", {})
                 if live:
-                    # In --live mode, dynamically use computed expected values from live PostgreSQL
                     if expected_intent == "anomaly_detection" and isinstance(ev_data, dict):
                         if qid in ("anom_02", "anom_07") or "how many" in qtext.lower() or "detect any" in qtext.lower() or "total" in qtext.lower():
                             target_val = float(ev_data.get("total_anomalies", expected_val))
@@ -602,54 +666,132 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
                         if qid in ("del_02", "ml_hi_07"):
                             target_val = float(ev_data.get("avg_actual_delivery_days", expected_val))
 
-                quota_skipped_numeric = False
-                if mode == "gemini" and client and not gemini_quota_hit:
-                    try:
-                        answer = AIService.synthesize_explanation_gemini(client, qtext, evidence, language=qlang)
-                    except Exception as e:
-                        err_str = str(e)
-                        if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
-                            gemini_quota_hit = True
-                            quota_skipped_numeric = True
-                            print(f"  [GEMINI QUOTA] {qid} (numeric): NOT RUN (AI quota exhausted)")
-                            num_match = None  # excluded from denominator
-                            numeric_total -= 1  # undo increment above
-                            category_stats[prefix]["num_total"] -= 1
-                            language_stats[qlang]["num_total"] -= 1
+                if mode == "gemini" and client:
+                    if quota_state["exhausted"]:
+                        quota_skipped_numeric = True
+                        numeric_source = "not_run_quota"
+                    else:
+                        synth_prompt = f"synthesize:{qtext}:{json.dumps(ev_data, sort_keys=True)}:{qlang}"
+                        cached_answer = eval_cache.get(settings.GEMINI_MODEL, synth_prompt)
+                        if cached_answer:
+                            answer = cached_answer
+                            numeric_source = "cached"
                         else:
-                            print(f"  [GEMINI ERROR] {qid} (numeric): {err_str[:80]} — falling back to heuristic")
-                            answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
+                            try:
+                                answer = call_gemini_with_backoff(AIService.synthesize_explanation_gemini, client, qtext, evidence, language=qlang, raise_on_error=True)
+                                eval_cache.set(settings.GEMINI_MODEL, synth_prompt, "synthesize", answer)
+                                numeric_source = "live"
+                            except Exception as e:
+                                err_str = str(e)
+                                if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                                    quota_state["exhausted"] = True
+                                    quota_skipped_numeric = True
+                                    numeric_source = "not_run_quota"
+                                else:
+                                    answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
+                                    numeric_source = "fallback_heuristic"
                 else:
                     answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
+                    numeric_source = "heuristic"
 
                 if quota_skipped_numeric:
-                    # Quota-skipped: leave num_match as None (not counted)
-                    pass
+                    num_match = None
                 else:
                     num_match = check_numeric_match(answer, target_val)
                     grounded = verify_numeric_grounding(answer, ev_data)
-                    if num_match and grounded:
-                        numeric_correct += 1
-                        category_stats[prefix]["num_ok"] += 1
-                        language_stats[qlang]["num_ok"] += 1
-                    else:
-                        num_match = False
+                    num_match = bool(num_match and grounded)
             else:
                 num_match = False
 
-        results.append({
+        return {
             "id": qid,
             "prefix": prefix,
             "question": qtext[:42] + ("..." if len(qtext) > 42 else ""),
+            "qlang": qlang,
             "expected_intent": expected_intent,
             "actual_intent": actual_intent,
             "intent_match": intent_match,
+            "intent_source": intent_source,
             "expected_val": expected_val,
-            "num_match": num_match
-        })
+            "num_match": num_match,
+            "numeric_source": numeric_source,
+            "quota_skipped_numeric": quota_skipped_numeric,
+        }
+
+    # Execute cases (concurrently up to 4 workers if Gemini mode and multiple cases)
+    results = []
+    max_workers = 4 if mode == "gemini" and len(questions) > 1 else 1
+    if max_workers > 1:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {executor.submit(process_case, q): idx for idx, q in enumerate(questions)}
+            indexed_results = []
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                res = future.result()
+                indexed_results.append((idx, res))
+            indexed_results.sort(key=lambda x: x[0])
+            results = [r[1] for r in indexed_results]
+    else:
+        for q in questions:
+            results.append(process_case(q))
+
+    # Aggregate stats and print evaluation trace
+    intent_correct = 0
+    numeric_total = 0
+    numeric_correct = 0
+
+    category_stats: Dict[str, Dict[str, int]] = {}
+    language_stats: Dict[str, Dict[str, int]] = {
+        "en": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
+        "hi": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0},
+        "hinglish": {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
+    }
+
+    live_gemini_calls = 0
+    cached_gemini_calls = 0
+    not_run_quota_calls = 0
+
+    for r in results:
+        qid = r["id"]
+        prefix = r["prefix"]
+        qlang = r["qlang"]
+
+        if qlang not in language_stats:
+            language_stats[qlang] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
+        if prefix not in category_stats:
+            category_stats[prefix] = {"total": 0, "intent_ok": 0, "num_total": 0, "num_ok": 0}
+
+        category_stats[prefix]["total"] += 1
+        language_stats[qlang]["total"] += 1
+
+        for src in (r["intent_source"], r["numeric_source"]):
+            if src == "live":
+                live_gemini_calls += 1
+            elif src == "cached":
+                cached_gemini_calls += 1
+            elif src == "not_run_quota":
+                not_run_quota_calls += 1
+
+        if mode == "gemini":
+            label = "[LIVE]" if r["intent_source"] == "live" else ("[CACHED]" if r["intent_source"] == "cached" else ("[NOT_RUN]" if r["intent_source"] == "not_run_quota" else "[HEURISTIC]"))
+            print(f"  {label:<10} {qid}: intent={r['actual_intent']} (expected: {r['expected_intent']})")
+
+        if r["intent_match"]:
+            intent_correct += 1
+            category_stats[prefix]["intent_ok"] += 1
+            language_stats[qlang]["intent_ok"] += 1
+
+        if r["expected_val"] is not None and not r["quota_skipped_numeric"]:
+            numeric_total += 1
+            category_stats[prefix]["num_total"] += 1
+            language_stats[qlang]["num_total"] += 1
+            if r["num_match"]:
+                numeric_correct += 1
+                category_stats[prefix]["num_ok"] += 1
+                language_stats[qlang]["num_ok"] += 1
 
     # Print Category Breakdown Table
-    print(f"{'Category':<12} | {'Cases':<6} | {'Intent Acc':<12} | {'Numeric Faith':<14}")
+    print(f"\n{'Category':<12} | {'Cases':<6} | {'Intent Acc':<12} | {'Numeric Faith':<14}")
     print("-" * 52)
     cat_names = {
         "cat": "Category",
@@ -702,13 +844,18 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
         print(f"{lname:<14} | {ltotal:<6} | {li_ok}/{ltotal} ({li_pct:.1f}%) | {ln_str:<14}")
 
     # Overall Summary
-    intent_accuracy = (intent_correct / len(questions)) * 100.0
+    intent_accuracy = (intent_correct / len(questions)) * 100.0 if questions else 0.0
     num_accuracy = (numeric_correct / numeric_total * 100.0) if numeric_total else 100.0
 
     print("=" * 82)
-    print(f"Benchmark Mode:                        {mode_upper}")
-    print(f"Overall Intent Classification Accuracy: {intent_correct}/{len(questions)} ({intent_accuracy:.2f}%)")
-    print(f"Overall Numeric Faithfulness:          {numeric_correct}/{numeric_total} ({num_accuracy:.2f}%)")
+    print(f"Benchmark Mode:                         {mode_upper}")
+    if mode == "gemini":
+        print(f"Gemini API Execution Breakdown:")
+        print(f"  - Live Gemini API Calls:              {live_gemini_calls}")
+        print(f"  - Cached Responses:                   {cached_gemini_calls}")
+        print(f"  - Not Run / Quota Skipped:            {not_run_quota_calls}")
+    print(f"Overall Intent Classification Accuracy:  {intent_correct}/{len(questions)} ({intent_accuracy:.2f}%)")
+    print(f"Overall Numeric Faithfulness:           {numeric_correct}/{numeric_total} ({num_accuracy:.2f}%)")
     print("=" * 82)
 
     passed = intent_accuracy >= 80.0 and num_accuracy >= 80.0
@@ -738,11 +885,29 @@ def main():
         default=None,
         help="Custom YAML questions dataset (e.g. golden_questions_holdout.yaml)"
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Run only first N evaluation cases"
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Bypass on-disk Gemini response cache"
+    )
     args = parser.parse_args()
     if args.mode == "sql":
-        success = run_sql_evaluations(questions_path=args.questions)
+        success = run_sql_evaluations(questions_path=args.questions, limit=args.limit)
     else:
-        success = run_evaluations(mode=args.mode, live=args.live, questions_path=args.questions)
+        success = run_evaluations(
+            mode=args.mode,
+            live=args.live,
+            questions_path=args.questions,
+            limit=args.limit,
+            no_cache=args.no_cache
+        )
     sys.exit(0 if success else 1)
 
 

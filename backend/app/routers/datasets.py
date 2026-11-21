@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request
 
 from backend.app.config import settings
 from backend.app.fixture_guard import is_fixture_mode
-from backend.app.limiter import limiter
+from backend.app.limiter import limiter, get_client_ip
 from backend.app.schemas.dataset import (
     DatasetProfile,
     DatasetSummary,
@@ -75,10 +75,12 @@ async def upload_dataset(
         files_data.append((filename, content))
 
     try:
+        client_ip = get_client_ip(request)
         resp = DatasetService.upload_dataset(
             files_data=files_data,
             owner_token=x_owner_token,
-            dataset_name=dataset_name
+            dataset_name=dataset_name,
+            client_ip=client_ip
         )
         # Update share_samples if specified
         if share_samples:

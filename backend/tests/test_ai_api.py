@@ -240,7 +240,8 @@ class TestAIAPI(unittest.TestCase):
     # ======================================================================
     # AI Infrastructure: History, Grounding Verification, Rate Limiter
     # ======================================================================
-    def test_ai_history_endpoint(self):
+    @patch("backend.app.services.ai_service.AIService._get_genai_client", return_value=None)
+    def test_ai_history_endpoint(self, mock_get_client):
         """Test GET /api/ai/history returns audit log records."""
         # Make a request first to populate audit log
         self.client.post("/api/ai/ask", json={"question": "What is our average order value?"})

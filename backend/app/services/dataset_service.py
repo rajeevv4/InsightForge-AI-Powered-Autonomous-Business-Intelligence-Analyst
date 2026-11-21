@@ -89,11 +89,39 @@ class DatasetService:
         return cnt or 0
 
     @classmethod
+    def count_global_datasets(cls) -> int:
+        """Counts total active uploaded datasets across all owners."""
+        with engine.connect() as conn:
+            cnt = conn.execute(
+                text("SELECT count(*) FROM insightforge.datasets WHERE schema_name != 'insightforge';")
+            ).scalar()
+        return cnt or 0
+
+    @classmethod
+    def count_daily_ip_uploads(cls, client_ip: str) -> int:
+        """Counts datasets uploaded by client_ip in the past 24 hours from the audit log."""
+        if not client_ip:
+            return 0
+        with engine.connect() as conn:
+            cnt = conn.execute(
+                text("""
+                    SELECT count(*) FROM insightforge.ai_audit_log
+                    WHERE intent = 'dataset_upload'
+                      AND question LIKE :pattern
+                      AND timestamp > NOW() - INTERVAL '24 hours'
+                      AND success = true;
+                """),
+                {"pattern": f"%ip: {client_ip}%"}
+            ).scalar()
+        return cnt or 0
+
+    @classmethod
     def upload_dataset(
         cls,
         files_data: List[Tuple[str, bytes]],
         owner_token: Optional[str] = None,
-        dataset_name: Optional[str] = None
+        dataset_name: Optional[str] = None,
+        client_ip: Optional[str] = None
     ) -> UploadDatasetResponse:
         """
         Loads 1-5 tabular files into a dedicated PostgreSQL schema (ds_<8hex>).
@@ -107,10 +135,26 @@ class DatasetService:
         if len(files_data) > 5:
             raise FileValidationError("Exceeded maximum of 5 files per dataset upload.", status_code=400)
 
-        # 1. Check database capacity
+        # 1. Check database capacity & global limits
         cls.check_database_storage_capacity()
 
-        # 2. Owner token resolution
+        global_dataset_count = cls.count_global_datasets()
+        if global_dataset_count >= settings.MAX_GLOBAL_DATASETS:
+            raise FileValidationError(
+                f"Global dataset limit reached ({global_dataset_count}/{settings.MAX_GLOBAL_DATASETS}). System capacity full.",
+                status_code=507
+            )
+
+        # 2. Check per-IP daily upload limit
+        if client_ip:
+            daily_ip_count = cls.count_daily_ip_uploads(client_ip)
+            if daily_ip_count >= settings.MAX_DATASETS_PER_IP_PER_DAY:
+                raise FileValidationError(
+                    f"Daily upload limit of {settings.MAX_DATASETS_PER_IP_PER_DAY} datasets per IP exceeded.",
+                    status_code=429
+                )
+
+        # 3. Owner token resolution
         issued_new_token = False
         if not owner_token or not owner_token.strip():
             owner_token = f"own_{secrets.token_hex(16)}"
@@ -333,8 +377,9 @@ class DatasetService:
 
         # Log upload metadata to audit log
         try:
+            ip_info = f", ip: {client_ip}" if client_ip else ""
             AIAuditService.log_interaction(
-                question=f"[dataset_upload: {clean_dataset_name}, tables: {len(parsed_tables)}, rows: {total_rows_inserted}, schema: {schema_name}]",
+                question=f"[dataset_upload: {clean_dataset_name}, tables: {len(parsed_tables)}, rows: {total_rows_inserted}, schema: {schema_name}{ip_info}]",
                 intent="dataset_upload",
                 latency_ms=100.0,
                 success=True

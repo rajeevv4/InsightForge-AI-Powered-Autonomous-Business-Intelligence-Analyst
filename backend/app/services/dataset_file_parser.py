@@ -116,8 +116,8 @@ def infer_column_type(values: List[Any]) -> Tuple[str, Optional[str]]:
     if bool_matches == n_total and any(s.lower() in ("true", "false", "yes", "no", "t", "f") for s in str_vals):
         return "BOOLEAN", None
 
-    # 2. Integer check
-    int_matches = sum(1 for s in str_vals if re.match(r"^-?\d+$", s))
+    # 2. Integer check (including signed integers e.g. -2, +3)
+    int_matches = sum(1 for s in str_vals if re.match(r"^[+-]?\d+$", s))
     if int_matches == n_total:
         # Check range
         max_abs = max(abs(int(s)) for s in str_vals)
@@ -125,8 +125,8 @@ def infer_column_type(values: List[Any]) -> Tuple[str, Optional[str]]:
             return "BIGINT", None
         return "INTEGER", None
 
-    # 3. Numeric / Decimal check
-    num_matches = sum(1 for s in str_vals if re.match(r"^-?\d+(?:\.\d+)?$", s))
+    # 3. Numeric / Decimal check (including signed decimals e.g. -5.5, +3.14)
+    num_matches = sum(1 for s in str_vals if re.match(r"^[+-]?\d+(?:\.\d+)?$", s))
     if num_matches == n_total:
         return "NUMERIC(15, 2)", None
 
@@ -348,25 +348,61 @@ class DatasetFileParser:
         safe_cols, mapping = sanitize_column_list(raw_cols)
         df.columns = safe_cols
 
-        # Formula injection neutralization: prefix cells starting with = + - @ with a tab
-        # so they cannot be interpreted as spreadsheet formulas if re-exported.
-        # We store the prefixed string in the database (TEXT column); the prefix is harmless.
-        _FORMULA_PREFIX_CHARS = ("=", "+", "-", "@")
-        for col in df.columns:
-            # Apply to all string/object dtype columns
-            if pd.api.types.is_string_dtype(df[col]) or df[col].dtype.kind in ("O", "S", "U"):
-                df[col] = df[col].apply(
-                    lambda v: ("\t" + v)
-                    if isinstance(v, str) and v and v[0] in _FORMULA_PREFIX_CHARS
-                    else v
-                )
-
-        # Detect warnings (e.g. ambiguous date formats)
+        # 1. Type inference & warning detection on RAW values first
+        # Ensures signed numeric columns e.g. (-5.5, 10, -2, +3) are inferred as NUMERIC/INTEGER
         column_warnings = []
+        column_types = {}
         for safe_col in safe_cols:
             vals = df[safe_col].dropna().astype(str).tolist()[:50]
-            _, warning = infer_column_type(vals)
+            col_type, warning = infer_column_type(vals)
+            column_types[safe_col] = col_type
             if warning:
                 column_warnings.append({"column": safe_col, "warning": warning})
+
+        # 2. Neutralize formula injection ONLY for columns that remain TEXT
+        # Cells starting with = or @, or dangerous DDE syntax (+cmd|... or -cmd|...)
+        # are prefixed with \t so spreadsheets treat them as literal text.
+        # Plain text like "-" and "+1 plan" keeps equality and grouping semantics.
+        def _is_formula(val: str) -> bool:
+            if not val or not isinstance(val, str):
+                return False
+            s = val.strip()
+            # =HYPERLINK(...), =SUM(...), @SUM(...)
+            if s.startswith("=") or s.startswith("@"):
+                return True
+            # Dangerous DDE / execution syntax like +cmd|... or -2+3+cmd
+            if s.startswith("+") or s.startswith("-"):
+                # Exclude plain text: single dash, double dash
+                if s in ("-", "+", "--", "---"):
+                    return False
+                # Exclude plain text labels with spaces like "+1 plan", "- none"
+                if re.match(r"^[+-]\d*\s+[A-Za-z]", s):
+                    return False
+                # Formula with pipe, function, chained expression or identifiers
+                if "|" in s or re.search(r"[+\-*/]\s*[A-Za-z_]", s) or re.match(r"^[+-]\s*[A-Za-z_]", s):
+                    return True
+                return True
+            return False
+
+        for safe_col in safe_cols:
+            if column_types.get(safe_col) == "TEXT":
+                has_formula = False
+                sample_formula = ""
+
+                def _neutralize(v):
+                    nonlocal has_formula, sample_formula
+                    if isinstance(v, str) and _is_formula(v):
+                        has_formula = True
+                        if not sample_formula:
+                            sample_formula = v[:40]
+                        return "\t" + v
+                    return v
+
+                df[safe_col] = df[safe_col].apply(_neutralize)
+                if has_formula:
+                    column_warnings.append({
+                        "column": safe_col,
+                        "warning": f"Formula injection detected in column '{safe_col}' (e.g. '{sample_formula}'); neutralized with tab prefix."
+                    })
 
         return df, table_name, safe_cols, mapping, column_warnings

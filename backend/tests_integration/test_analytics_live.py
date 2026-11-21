@@ -179,6 +179,24 @@ class TestLiveDatabaseAnalytics(unittest.TestCase):
         bf_found = any("2017-11-24" in str(a.get("period")) for a in scan_data.get("anomalies", []))
         self.assertTrue(bf_found, "Expected Black Friday 2017 (2017-11-24) to be detected in live anomaly scan.")
 
+    def test_validator_allowed_views_exist_in_live_db(self):
+        """Every view in ALLOWED_ANALYTICAL_VIEWS must exist in the PostgreSQL schema."""
+        from backend.app.config import settings
+        from backend.app.services.sql_validator import ALLOWED_ANALYTICAL_VIEWS
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT table_name FROM information_schema.views WHERE table_schema = :s"),
+                {"s": settings.DB_SCHEMA}
+            ).fetchall()
+            live_views = {r[0] for r in rows}
+            for v in ALLOWED_ANALYTICAL_VIEWS:
+                self.assertIn(
+                    v,
+                    live_views,
+                    f"View '{v}' in ALLOWED_ANALYTICAL_VIEWS not found in database schema '{settings.DB_SCHEMA}'"
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

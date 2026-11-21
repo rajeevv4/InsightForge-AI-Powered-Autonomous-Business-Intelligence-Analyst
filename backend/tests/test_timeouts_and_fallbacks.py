@@ -37,8 +37,8 @@ class TestTimeoutsAndFallbacks(unittest.TestCase):
     def test_anomaly_query_timeout_ask_ai_returns_504(self):
         """When an anomaly query times out and USE_FIXTURES is unset, /api/ai/ask returns 504."""
         with patch.dict(os.environ, {"USE_FIXTURES": "0"}):
-            with patch("backend.app.services.anomaly_service.AnomalyService.detect_all") as mock_detect:
-                mock_detect.side_effect = QueryTimeoutError("canceling statement due to statement timeout")
+            with patch("backend.app.services.anomaly_service.AnomalyService.run_full_scan") as mock_scan:
+                mock_scan.side_effect = QueryTimeoutError("canceling statement due to statement timeout")
                 
                 response = client.post("/api/ai/ask", json={"question": "Are there any anomalies in our revenue?"})
                 self.assertEqual(response.status_code, 504)

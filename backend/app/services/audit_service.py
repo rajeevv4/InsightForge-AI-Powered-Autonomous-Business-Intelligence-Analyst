@@ -75,6 +75,11 @@ class AIAuditService:
         # Always append to in-memory fallback
         _memory_audit_log.append(entry)
 
+        # In fixture mode, skip database persistence to avoid connection delays
+        from backend.app.fixture_guard import is_fixture_mode
+        if is_fixture_mode():
+            return entry
+
         # Attempt PostgreSQL insert
         try:
             cls._ensure_table()
@@ -109,6 +114,13 @@ class AIAuditService:
         Retrieve recent AI query history. Queries PostgreSQL first; falls back to in-memory log.
         """
         limit = max(1, min(limit, 500))
+
+        # In fixture mode, return in-memory history directly
+        from backend.app.fixture_guard import is_fixture_mode
+        if is_fixture_mode():
+            entries = list(_memory_audit_log)
+            entries.reverse()
+            return entries[:limit]
 
         # Try database retrieval
         try:

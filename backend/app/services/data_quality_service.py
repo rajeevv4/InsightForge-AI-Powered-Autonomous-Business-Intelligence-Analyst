@@ -18,6 +18,28 @@ class DataQualityService:
 
     @staticmethod
     def fetch_audit_summary() -> Dict[str, Any]:
+        from backend.app.fixture_guard import is_fixture_mode_allowed
+        if is_fixture_mode_allowed():
+            return {
+                "audit_status": "PASS",
+                "table_row_counts": {
+                    "customers": 99441, "products": 32951, "sellers": 3095,
+                    "orders": 99441, "order_items": 112650, "order_payments": 103886,
+                    "order_reviews": 99224
+                },
+                "missing_value_summary": {
+                    "orders.order_approved_at": 160,
+                    "orders.order_delivered_customer_date": 2965,
+                    "products.product_category_name_english": 623
+                },
+                "primary_key_uniqueness": "PASS (0 duplicates across 7 tables)",
+                "foreign_key_integrity": "PASS (0 orphans across 6 relations)",
+                "domain_bounds_status": "PASS (0 out of range values)",
+                "order_status_breakdown": {"delivered": 96478, "shipped": 1107, "canceled": 625},
+                "join_safety_status": "PASS (0.00 discrepancy)",
+                "anomalies_flagged": []
+            }
+
         engine = dq_mod.get_db_engine()
         DB_SCHEMA = dq_mod.DB_SCHEMA
         tables = ["customers", "products", "sellers", "orders", "order_items", "order_payments", "order_reviews"]

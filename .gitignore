@@ -19,6 +19,7 @@ frontend/dist/
 # Data directory (keep raw structure, exclude large csv downloads from git tracking)
 data/raw/*.csv
 data/processed/*.csv
+data/samples/*.xlsx
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
@@ -26,3 +27,6 @@ data/processed/*.csv
 .DS_Store
 .vscode/
 .idea/
+
+# Evals response cache
+backend/evals/.cache/

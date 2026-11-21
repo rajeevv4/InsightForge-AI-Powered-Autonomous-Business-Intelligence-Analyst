@@ -9,6 +9,10 @@ Creates 3 test datasets in data/samples/:
 """
 
 import os
+import re
+import tempfile
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
 
@@ -61,7 +65,22 @@ def generate_sample_datasets():
             })
     df_students = pd.DataFrame(students_data)
     students_xlsx = SAMPLE_DIR / "student_marks.xlsx"
-    df_students.to_excel(students_xlsx, index=False, engine="openpyxl")
+    with pd.ExcelWriter(students_xlsx, engine="openpyxl") as writer:
+        df_students.to_excel(writer, index=False)
+        writer.book.properties.created = datetime(2023, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+        writer.book.properties.modified = datetime(2023, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+
+    # Normalize zip entry timestamps and metadata for byte-level determinism across runs
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    with zipfile.ZipFile(students_xlsx, "r") as zin, zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        for item in sorted(zin.infolist(), key=lambda x: x.filename):
+            data = zin.read(item.filename)
+            if item.filename == "docProps/core.xml":
+                data = re.sub(rb'<dcterms:modified[^>]*>[^<]*</dcterms:modified>', b'<dcterms:modified xsi:type="dcterms:W3CDTF">2023-11-20T00:00:00Z</dcterms:modified>', data)
+            zinfo = zipfile.ZipInfo(item.filename, (2023, 11, 20, 0, 0, 0))
+            zout.writestr(zinfo, data)
+    tmp_path.replace(students_xlsx)
     print(f"✅ Generated {students_xlsx.name} ({len(df_students)} rows)")
 
     # 3. Bike Sharing Messy (TSV) - Messy headers, ambiguous dates, constant col, high nulls

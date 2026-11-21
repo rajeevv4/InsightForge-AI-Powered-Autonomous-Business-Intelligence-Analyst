@@ -102,6 +102,8 @@ class AnomalyService:
         """
         now = time.time()
         cache_key = (dataset_id, grain)
+        if is_fixture_mode_allowed():
+            return cls._get_canonical_fixture_series(grain=grain)
         with cls._cache_lock:
             if cache_key in cls._series_cache:
                 cached_time, cached_df = cls._series_cache[cache_key]
