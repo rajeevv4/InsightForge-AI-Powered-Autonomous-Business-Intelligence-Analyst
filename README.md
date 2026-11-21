@@ -2,7 +2,7 @@
 
 > **B.Tech Major Project**  
 > **Authors & Developers**: **Rajeev Karakoti**, **Priyanshu Saklani**, **Prasanna Godiyal**  
-> **Status**: ✅ **Levels 0, 1, 1.5, 2, 3, 4 & 5 Complete — Viva & Production Ready**  
+> **Status**: ✅ **Levels 0, 1, 1.5, 2, 3, 4, 5 & 6 Complete — Viva & Production Ready**  
 > **Dataset**: Olist Brazilian E-Commerce (~100,000 orders, 7 tables, Currency: `R$`)  
 > **Repository**: [InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst](https://github.com/rajeevv4/InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst)
 
@@ -61,16 +61,22 @@ InsightForge/
 │   │   ├── schemas/                  # Pydantic validation schemas
 │   │   │   ├── ai.py                 # AskAIRequest, AskAIResponse, AIAuditLogItem
 │   │   │   ├── anomaly.py            # AnomalyItem, TimeSeriesPoint, ScanRequest/Response
+│   │   │   ├── dataset.py            # Level 5 Dataset upload, profile & findings schemas
+│   │   │   ├── dataset_semantic.py   # Level 6 Semantic layer, ask & insights schemas
 │   │   │   ├── kpis.py               # KPISummaryResponse schema
 │   │   │   └── voice.py              # VoiceTranscribeResponse schema
 │   │   ├── services/                 # Business logic service layer
 │   │   │   ├── analytics_service.py  # Trusted analytics functions
 │   │   │   ├── anomaly_service.py    # Deterministic anomaly detection (MAD, STL, IQR, IsolationForest)
 │   │   │   ├── data_quality_service.py # 10-check data quality audit engine
+│   │   │   ├── dataset_service.py    # Level 5 Dataset ingestion, profiling & schema lifecycle
+│   │   │   ├── dataset_file_parser.py# File validation, CSV/XLSX parsing & formula neutralization
+│   │   │   ├── dataset_semantic_service.py # Level 6 Semantic modeling & starter question generator
+│   │   │   ├── dataset_insights_service.py # Level 6 Template insights & time-series anomaly detection
 │   │   │   ├── ai_analytics_router.py # Controlled intent-to-view router
 │   │   │   ├── ai_service.py         # Gemini classifier & grounded synthesizer (Hindi, Hinglish, English)
-│   │   │   ├── sql_validator.py      # sqlglot AST SQL injection & safety validator
-│   │   │   ├── text_to_sql_service.py# Guarded Text-to-SQL engine with self-correction
+│   │   │   ├── sql_validator.py      # sqlglot AST SQL injection & safety validator (scoped context)
+│   │   │   ├── text_to_sql_service.py# Guarded Text-to-SQL engine with self-correction & privacy engine
 │   │   │   ├── audit_service.py      # AI interaction audit logger
 │   │   │   ├── grounding.py          # Deterministic regex numeric faithfulness & Indian scale verifier
 │   │   │   └── voice_service.py      # Gemini audio transcription & in-memory MIME validator
@@ -81,24 +87,34 @@ InsightForge/
 │   │       ├── data_quality.py       # Data quality audit endpoint
 │   │       ├── anomalies.py          # GET /api/anomalies & POST /api/anomalies/scan
 │   │       ├── ai.py                 # POST /api/ai/ask, POST /api/ai/sql-ask & GET /api/ai/history
-│   │       └── voice.py              # POST /api/voice/transcribe (rate-limited, zero-persistence)
+│   │       ├── voice.py              # POST /api/voice/transcribe (rate-limited, zero-persistence)
+│   │       └── datasets.py           # Level 5 & 6 /api/datasets endpoints (upload, ask, semantic, insights)
 │   ├── evals/
 │   │   ├── golden_questions.yaml     # 113 structured evaluation test cases (intent, SQL & multilingual)
-│   │   └── run_eval.py               # Dual-mode benchmark (--mode heuristic | gemini | sql)
-│   └── tests/                        # 90+ unit tests
-│       ├── test_api.py               # Core REST API endpoint tests
-│       ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
-│       ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
-│       ├── test_sql_security.py      # Level 3 AST validator, SQL injection & routing tests
-│       ├── test_grounding.py         # Grounding verifier, Devanagari & scale tests
-│       ├── test_audit_service.py     # AI audit logging & ring-buffer tests
-│       ├── test_fixture_guard.py     # Rule 5 fixture enforcement tests
-│       ├── test_database_unavailable.py # Level 1.5 DB down 503 and fixture badge tests
-│       └── test_voice_multilingual.py # Level 4 Voice audio, MIME, Hindi NLP & TTS tests
+│   │   ├── run_eval.py               # Dual-mode benchmark (--mode heuristic | gemini | sql)
+│   │   ├── dataset_eval.py           # Level 6 Generality evaluation harness for custom datasets
+│   │   └── .cache/                   # Persistent evaluation cache for LLM quota protection
+│   ├── tests/                        # 100+ hermetic unit tests
+│   │   ├── test_api.py               # Core REST API endpoint tests
+│   │   ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
+│   │   ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
+│   │   ├── test_sql_security.py      # Level 3 AST validator, SQL injection & routing tests
+│   │   ├── test_grounding.py         # Grounding verifier, Devanagari & scale tests
+│   │   ├── test_audit_service.py     # AI audit logging & ring-buffer tests
+│   │   ├── test_fixture_guard.py     # Rule 5 fixture enforcement tests
+│   │   ├── test_database_unavailable.py # Level 1.5 DB down 503 and fixture badge tests
+│   │   ├── test_voice_multilingual.py # Level 4 Voice audio, MIME, Hindi NLP & TTS tests
+│   │   ├── test_dataset_workspace.py # Level 5 File parser, role heuristic, relationship tests
+│   │   ├── test_datasets_api.py      # Level 5 Dataset REST endpoints unit tests
+│   │   └── test_dataset_qa.py        # Level 6 Scoped Text-to-SQL, privacy, & fan-out unit tests
+│   └── tests_integration/            # Live database integration tests
+│       ├── test_datasets_live.py     # Level 5 Real multi-tenant schema upload & cleanup
+│       └── test_dataset_qa_live.py   # Level 6 Live multi-table semantic QA & insights
 ├── database/
 │   ├── schema.sql                    # PostgreSQL DDL schema & table constraints
 │   ├── views.sql                     # Analytical views with CTE fan-out prevention
 │   ├── roles.sql                     # Read-only role (insightforge_ro) with 5s timeout
+│   ├── migrations/                   # Database migrations (001, 002 for dataset_semantic)
 │   ├── seed.py                       # Data cleaning & bulk CSV loader
 │   ├── data_quality.py               # 10-check database audit script
 │   ├── analytics.py                  # Pooled analytics execution module
@@ -275,7 +291,7 @@ npm run dev
 InsightForge includes isolated verification suites with clearly defined execution modes:
 
 ```bash
-# 1. Deterministic Unit Tests (77 tests, runs offline with USE_FIXTURES=1)
+# 1. Deterministic Unit Tests (100+ tests, runs offline with USE_FIXTURES=1)
 python -m unittest discover -s backend/tests
 
 # 2. Mathematical Analytical Invariants Test Suite (8 tests)
@@ -289,7 +305,10 @@ python backend/evals/run_eval.py --mode heuristic          # Canonical benchmark
 python backend/evals/run_eval.py --mode heuristic --live   # Evaluates evidence against live PostgreSQL
 python backend/evals/run_eval.py --mode sql                # Evaluates dynamic Text-to-SQL against live PostgreSQL & Gemini API (30 cases)
 
-# 5. Frontend TypeScript Validation & Production Build
+# 5. Level 6 Generality Evaluation (Multi-dataset benchmark on 3 domains)
+python backend/evals/dataset_eval.py --limit 5
+
+# 6. Frontend TypeScript Validation & Production Build
 cd frontend; npx tsc --noEmit; npm run build
 ```
 
@@ -313,6 +332,16 @@ cd frontend; npx tsc --noEmit; npm run build
 | `/api/ai/ask` | `POST` | Controlled intent-based query: classify intent, fetch PostgreSQL evidence, verify grounding, and return insight |
 | `/api/ai/sql-ask` | `POST` | Guarded Text-to-SQL: AST validator, readonly execution, self-correction, grounding verifier, and chart suggestions |
 | `/api/ai/history` | `GET` | Retrieve recorded AI interaction audit history with latency, intent, route, and status |
+| `/api/voice/transcribe` | `POST` | Level 4 Voice transcription endpoint (multipart audio, Gemini audio transcription, zero persistence) |
+| `/api/datasets/upload` | `POST` | Level 5 Upload 1-5 CSV/TSV/XLSX files into isolated `ds_<8hex>` schema with profiling |
+| `/api/datasets` | `GET` | Level 5 List uploaded datasets with summary, table counts, and row counts |
+| `/api/datasets/{id}` | `GET` | Level 5 Get dataset profile, columns, data quality findings, and inferred relationships |
+| `/api/datasets/{id}/preview` | `GET` | Level 5 Row preview (max 50 rows) for specified table |
+| `/api/datasets/{id}` | `DELETE` | Level 5 Drop isolated schema `ds_<8hex>` and delete dataset metadata |
+| `/api/datasets/{id}/semantic/generate` | `POST` | Level 6 Deterministic draft generation of measures, dimensions, and starter questions |
+| `/api/datasets/{id}/semantic` | `GET` / `PATCH` | Level 6 Retrieve and confirm/edit dataset semantic modeling layer |
+| `/api/datasets/{id}/ask` | `POST` | Level 6 Scoped Text-to-SQL asking engine with AST validation, privacy modes, and 1:N fan-out rejection |
+| `/api/datasets/{id}/insights` | `GET` | Level 6 Pre-computed time-trend, top-N, and distribution queries plus rolling MAD anomaly detection |
 
 ---
 
@@ -323,6 +352,7 @@ cd frontend; npx tsc --noEmit; npm run build
 - [`semantic/dimensions.yaml`](semantic/dimensions.yaml) — Analytical Dimensions Catalog
 - [`semantic/relationships.yaml`](semantic/relationships.yaml) — Join Graph & Fan-Out Multiplication Guardrails
 - [`docs/viva_preparation.md`](docs/viva_preparation.md) — Comprehensive Viva Presentation & Defense Guide
+- [`docs/dataset_qa.md`](docs/dataset_qa.md) — Level 6 Dataset-Aware Q&A, Semantic Layer & Scoped Text-to-SQL Architecture
 - [`docs/text_to_sql.md`](docs/text_to_sql.md) — Level 3 Guarded Text-to-SQL Architecture, AST Validator Rules & Self-Correction
 - [`docs/anomaly_detection.md`](docs/anomaly_detection.md) — Deterministic Multi-Method Anomaly Detection Engine Guide
 - [`docs/ai_infrastructure.md`](docs/ai_infrastructure.md) — AI Infrastructure, Role Separation & Grounding Verifier Architecture
