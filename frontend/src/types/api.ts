@@ -276,4 +276,115 @@ export interface TablePreviewResponse {
   rows: Record<string, any>[];
 }
 
+export interface MeasureDefinition {
+  name: string;
+  safe_name: string;
+  table: string;
+  column?: string | null;
+  aggregation: string;
+  formula?: string | null;
+  description?: string | null;
+  synonyms: string[];
+}
+
+export interface DimensionDefinition {
+  name: string;
+  safe_name: string;
+  table: string;
+  column: string;
+  data_type: string;
+  description?: string | null;
+  synonyms: string[];
+}
+
+export interface TimeColumnDefinition {
+  name: string;
+  safe_name: string;
+  table: string;
+  column: string;
+  data_type: string;
+}
+
+export interface CandidateKeyDefinition {
+  table: string;
+  column: string;
+}
+
+export interface RelationshipDefinition {
+  parent_table: string;
+  parent_column: string;
+  child_table: string;
+  child_column: string;
+  cardinality: string;
+  confirmed: boolean;
+}
+
+export interface SemanticModel {
+  dataset_id: string;
+  dataset_name: string;
+  measures: MeasureDefinition[];
+  dimensions: DimensionDefinition[];
+  time_columns: TimeColumnDefinition[];
+  candidate_keys: CandidateKeyDefinition[];
+  relationships: RelationshipDefinition[];
+  user_notes?: string | null;
+}
+
+export interface DatasetSemanticResponse {
+  dataset_id: string;
+  status: 'draft' | 'confirmed';
+  semantic_model: SemanticModel;
+  starter_questions: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface UpdateDatasetSemanticRequest {
+  status?: string;
+  measures?: MeasureDefinition[];
+  dimensions?: DimensionDefinition[];
+  relationships?: RelationshipDefinition[];
+  starter_questions?: string[];
+  user_notes?: string;
+}
+
+export interface DatasetAskResponse {
+  question: string;
+  sql: string;
+  explanation: string;
+  suggested_chart: 'bar' | 'line' | 'pie' | 'table';
+  assumptions: string[];
+  data_rows: Record<string, any>[];
+  columns: string[];
+  privacy_badge: 'AI sees: schema only' | 'AI sees: schema + data';
+  execution_time_ms: number;
+  row_count: number;
+}
+
+export interface InsightChartSpec {
+  title: string;
+  chart_type: 'line' | 'bar' | 'pie' | 'table';
+  sql: string;
+  x_axis: string;
+  y_axis: string;
+  data: Record<string, any>[];
+}
+
+export interface DatasetInsightsResponse {
+  dataset_id: string;
+  time_trend?: InsightChartSpec | null;
+  top_n?: InsightChartSpec | null;
+  distribution?: InsightChartSpec | null;
+  anomalies: Array<{
+    period: string;
+    metric: string;
+    actual_value: number;
+    expected_value: number;
+    deviation_pct: number;
+    severity: string;
+    label: string;
+    direction: string;
+  }>;
+}
+
 

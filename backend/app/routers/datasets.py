@@ -12,8 +12,19 @@ from backend.app.schemas.dataset import (
     UpdateDatasetRequest,
     UploadDatasetResponse,
 )
+from backend.app.schemas.dataset_semantic import (
+    DatasetAskRequest,
+    DatasetAskResponse,
+    DatasetInsightsResponse,
+    DatasetSemanticResponse,
+    UpdateDatasetSemanticRequest,
+)
 from backend.app.services.dataset_file_parser import FileValidationError
 from backend.app.services.dataset_service import DatasetService
+from backend.app.services.dataset_semantic_service import DatasetSemanticService
+from backend.app.services.dataset_insights_service import DatasetInsightsService
+from backend.app.services.text_to_sql_service import TextToSQLService
+from backend.app.exceptions import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -215,3 +226,130 @@ async def delete_dataset(
     except Exception as e:
         logger.error(f"Failed to delete dataset {dataset_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete dataset.")
+
+
+# ==============================================================================
+# Level 6: Dataset-Aware Semantic Layer, Q&A, and Insights Endpoints
+# ==============================================================================
+
+@router.post(
+    "/{dataset_id}/semantic/generate",
+    response_model=DatasetSemanticResponse,
+    summary="Generate deterministic semantic layer draft with optional schema enrichment"
+)
+async def generate_dataset_semantic(
+    dataset_id: str,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token")
+):
+    """
+    Builds a draft semantic layer deterministically from dataset profiling:
+    measures, dimensions, time columns, candidate keys, relationships, and 6-8 starter questions.
+    """
+    _check_live_db()
+    try:
+        return DatasetSemanticService.generate_draft(dataset_id=dataset_id, owner_token=x_owner_token)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        logger.error(f"Failed to generate semantic layer for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/{dataset_id}/semantic",
+    response_model=DatasetSemanticResponse,
+    summary="Retrieve semantic layer for dataset"
+)
+async def get_dataset_semantic(
+    dataset_id: str,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token")
+):
+    """Retrieves existing semantic model or generates initial draft."""
+    _check_live_db()
+    try:
+        return DatasetSemanticService.get_semantic(dataset_id=dataset_id, owner_token=x_owner_token)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        logger.error(f"Failed to retrieve semantic model for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.patch(
+    "/{dataset_id}/semantic",
+    response_model=DatasetSemanticResponse,
+    summary="Update measures, dimensions, synonyms, and confirm semantic model"
+)
+async def update_dataset_semantic(
+    dataset_id: str,
+    req: UpdateDatasetSemanticRequest,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token")
+):
+    """Allows dataset owner to refine definitions and confirm the semantic model (status='confirmed')."""
+    _check_live_db()
+    try:
+        return DatasetSemanticService.update_semantic(dataset_id=dataset_id, req=req, owner_token=x_owner_token)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        logger.error(f"Failed to update semantic model for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post(
+    "/{dataset_id}/ask",
+    response_model=DatasetAskResponse,
+    summary="Ask business question over uploaded dataset using guarded Text-to-SQL"
+)
+@limiter.limit(settings.RATE_LIMIT_AI_ASK)
+async def ask_dataset(
+    request: Request,
+    dataset_id: str,
+    req: DatasetAskRequest,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token")
+):
+    """
+    Translates natural language questions to guarded PostgreSQL queries within the dataset's schema.
+    Enforces privacy policy: if share_samples is False, no cell values reach the LLM.
+    """
+    _check_live_db()
+    try:
+        return TextToSQLService.ask_dataset_sql(
+            dataset_id=dataset_id,
+            question=req.question,
+            owner_token=x_owner_token,
+            language=req.language or "auto"
+        )
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except DatabaseUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to execute dataset ask for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get(
+    "/{dataset_id}/insights",
+    response_model=DatasetInsightsResponse,
+    summary="Get pre-computed quick insights and statistical anomalies for dataset"
+)
+async def get_dataset_insights(
+    dataset_id: str,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token")
+):
+    """
+    Computes 3 validated insight queries (time trend, top-N, distribution) and
+    runs generic rolling MAD anomaly detection if time series >= 30 points.
+    """
+    _check_live_db()
+    try:
+        return DatasetInsightsService.get_insights(dataset_id=dataset_id, owner_token=x_owner_token)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except DatabaseUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to compute insights for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+

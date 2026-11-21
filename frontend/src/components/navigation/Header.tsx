@@ -121,6 +121,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, health }) => {
               <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                 {page.title}
               </h1>
+              {['/', '/analytics', '/customers', '/products', '/geography', '/sellers', '/payments', '/delivery', '/data-quality', '/anomalies'].includes(location.pathname) && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                  title="Viewing built-in Olist Brazilian E-commerce dataset"
+                >
+                  Demo dataset
+                </span>
+              )}
               {health?.data_source === 'fixture' && (
                 <span
                   className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-xs"

@@ -9,6 +9,7 @@ import {
   Table as TableIcon,
   BarChart2,
   TrendingUp,
+  PieChart as PieChartIcon,
   Code,
   Mic,
   Square,
@@ -16,7 +17,12 @@ import {
   VolumeX,
   Languages,
   ShieldCheck,
-  AlertCircle
+  ShieldAlert,
+  AlertCircle,
+  Database,
+  Layers,
+  Check,
+  Edit3
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,8 +36,17 @@ import {
   CartesianGrid
 } from 'recharts';
 import { api } from '../services/api';
-import { SQLAskResponse } from '../types/api';
+import {
+  DatasetAskResponse,
+  DatasetInsightsResponse,
+  DatasetSemanticResponse,
+  DatasetSummary,
+  SQLAskResponse,
+  UpdateDatasetSemanticRequest
+} from '../types/api';
 import { ErrorBanner } from './ErrorBanner';
+
+const OLIST_DEMO_ID = '00000000-0000-0000-0000-000000000001';
 
 const EXAMPLE_QUESTIONS = {
   en: [
@@ -60,15 +75,40 @@ const EXAMPLE_QUESTIONS = {
 };
 
 export const AskInsightForge: React.FC = () => {
+  // Datasets State
+  const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>(OLIST_DEMO_ID);
+  const [selectedDataset, setSelectedDataset] = useState<DatasetSummary | null>(null);
+
+  // Tabs: 'ask' | 'insights' | 'semantic'
+  const [activeTab, setActiveTab] = useState<'ask' | 'insights' | 'semantic'>('ask');
+
+  // Query State
   const [question, setQuestion] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isDbUnavailable, setIsDbUnavailable] = useState<boolean>(false);
-  const [response, setResponse] = useState<SQLAskResponse | null>(null);
+
+  // Olist Ask Response vs Custom Dataset Ask Response
+  const [olistResponse, setOlistResponse] = useState<SQLAskResponse | null>(null);
+  const [datasetResponse, setDatasetResponse] = useState<DatasetAskResponse | null>(null);
+
+  // Quick Insights State
+  const [insights, setInsights] = useState<DatasetInsightsResponse | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState<boolean>(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+
+  // Semantic Layer State
+  const [semantic, setSemantic] = useState<DatasetSemanticResponse | null>(null);
+  const [semanticLoading, setSemanticLoading] = useState<boolean>(false);
+  const [semanticConfirming, setSemanticConfirming] = useState<boolean>(false);
+  const [semanticSuccessMsg, setSemanticSuccessMsg] = useState<string | null>(null);
+
+  // Display toggles
   const [showSql, setShowSql] = useState<boolean>(false);
   const [showTable, setShowTable] = useState<boolean>(true);
 
-  // Level 4 Voice & Multilingual State
+  // Voice & Multilingual State
   const [selectedLanguage, setSelectedLanguage] = useState<'auto' | 'hi' | 'en'>('auto');
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
@@ -81,8 +121,11 @@ export const AskInsightForge: React.FC = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
 
-  // Clean up recording timer on unmount
+  const isCustomDataset = selectedDatasetId !== OLIST_DEMO_ID;
+
+  // Load datasets list on mount
   useEffect(() => {
+    loadDatasetsList();
     return () => {
       if (timerIntervalRef.current) {
         window.clearInterval(timerIntervalRef.current);
@@ -92,6 +135,61 @@ export const AskInsightForge: React.FC = () => {
       }
     };
   }, []);
+
+  // When selected dataset changes, fetch semantic model and reset state
+  useEffect(() => {
+    setError(null);
+    setOlistResponse(null);
+    setDatasetResponse(null);
+    setVoiceNotice(null);
+
+    const ds = datasets.find((d) => d.id === selectedDatasetId) || null;
+    setSelectedDataset(ds);
+
+    if (selectedDatasetId !== OLIST_DEMO_ID) {
+      loadSemanticLayer(selectedDatasetId);
+      loadQuickInsights(selectedDatasetId);
+    }
+  }, [selectedDatasetId, datasets]);
+
+  const loadDatasetsList = async () => {
+    try {
+      const list = await api.getDatasets();
+      setDatasets(list);
+      const current = list.find((d) => d.id === selectedDatasetId) || list[0];
+      if (current) {
+        setSelectedDataset(current);
+      }
+    } catch (e) {
+      console.warn('Could not load datasets list:', e);
+    }
+  };
+
+  const loadSemanticLayer = async (dsId: string) => {
+    setSemanticLoading(true);
+    try {
+      const sem = await api.getDatasetSemantic(dsId);
+      setSemantic(sem);
+    } catch (e: any) {
+      console.warn('Could not fetch semantic layer:', e);
+    } finally {
+      setSemanticLoading(false);
+    }
+  };
+
+  const loadQuickInsights = async (dsId: string) => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    try {
+      const data = await api.getDatasetInsights(dsId);
+      setInsights(data);
+    } catch (e: any) {
+      console.warn('Could not fetch dataset insights:', e);
+      setInsightsError('Insights unavailable. Server may be in fixture mode or dataset has no tables.');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
 
   const handleAsk = async (queryToAsk?: string) => {
     const targetQuestion = (queryToAsk !== undefined ? queryToAsk : question).trim();
@@ -104,25 +202,34 @@ export const AskInsightForge: React.FC = () => {
     setShowSql(false);
     setVoiceNotice(null);
 
-    // Stop speech synthesis if speaking previous answer
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
     }
 
     try {
-      const result = await api.sqlAskAI(targetQuestion);
-      setResponse(result);
+      if (isCustomDataset) {
+        const result = await api.askDataset(selectedDatasetId, targetQuestion, selectedLanguage);
+        setDatasetResponse(result);
+      } else {
+        const result = await api.sqlAskAI(targetQuestion);
+        setOlistResponse(result);
+      }
     } catch (err: any) {
-      console.error('Failed to query Ask InsightForge AI:', err);
+      console.error('Failed to query AI:', err);
       const is503 = err?.response?.status === 503;
+      const is429 = err?.response?.status === 429;
       setIsDbUnavailable(is503);
-      setError(
-        err?.response?.data?.detail ||
-        (is503
-          ? 'Database unavailable: SQL mode requires an active PostgreSQL connection.'
-          : 'Failed to process your question. Please ensure the server is active.')
-      );
+      if (is429) {
+        setError('AI quota reached. Please try again later or consult the pre-computed dataset insights.');
+      } else {
+        setError(
+          err?.response?.data?.detail ||
+          (is503
+            ? 'Database unavailable: SQL mode requires an active PostgreSQL connection.'
+            : 'Failed to process your question. Please ensure the server is active.')
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -134,9 +241,24 @@ export const AskInsightForge: React.FC = () => {
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Voice Recording & Transcription
-  // --------------------------------------------------------------------------
+  const handleConfirmSemantic = async () => {
+    if (!semantic) return;
+    setSemanticConfirming(true);
+    try {
+      const updated = await api.updateDatasetSemantic(selectedDatasetId, {
+        status: 'confirmed'
+      });
+      setSemantic(updated);
+      setSemanticSuccessMsg('Semantic model successfully confirmed!');
+      setTimeout(() => setSemanticSuccessMsg(null), 4000);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Failed to confirm semantic model');
+    } finally {
+      setSemanticConfirming(false);
+    }
+  };
+
+  // Voice Recording handlers
   const startRecording = async () => {
     setVoiceNotice(null);
     setError(null);
@@ -171,9 +293,7 @@ export const AskInsightForge: React.FC = () => {
       };
 
       recorder.onstop = async () => {
-        // Stop audio tracks
         stream.getTracks().forEach((track) => track.stop());
-
         if (timerIntervalRef.current) {
           window.clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
@@ -188,15 +308,13 @@ export const AskInsightForge: React.FC = () => {
           setVoiceNotice('No audio data captured. Please try recording again.');
           return;
         }
-
         await processAudioTranscription(audioBlob);
       };
 
-      recorder.start(250); // collect chunks every 250ms
+      recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
 
-      // Start duration counter (capped at 60s)
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 59) {
@@ -207,12 +325,7 @@ export const AskInsightForge: React.FC = () => {
         });
       }, 1000);
     } catch (err: any) {
-      console.error('Microphone error:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setVoiceNotice('Microphone access was denied. Please allow microphone permissions in your browser to use voice input.');
-      } else {
-        setVoiceNotice(`Unable to access microphone: ${err.message || 'Unknown error'}`);
-      }
+      setVoiceNotice('Microphone access was denied or unavailable.');
       setIsRecording(false);
     }
   };
@@ -226,511 +339,554 @@ export const AskInsightForge: React.FC = () => {
   const processAudioTranscription = async (blob: Blob) => {
     setIsTranscribing(true);
     setVoiceNotice(null);
-
     try {
       const result = await api.transcribeVoice(blob, 'voice_query.webm');
       if (result.text) {
-        // Put transcript in editable input box (never auto-send)
         setQuestion(result.text);
         const langLabel = result.detected_language === 'hi' ? 'Hindi (हिन्दी)' : (result.detected_language === 'hinglish' ? 'Hinglish' : 'English');
-        setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). You can review and edit your question below before querying.`);
+        setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask.`);
       } else {
-        setVoiceNotice('Transcription did not return any speech text. Please try again.');
+        setVoiceNotice('Transcription did not return speech text.');
       }
     } catch (err: any) {
-      console.warn('Backend transcription failed; attempting browser SpeechRecognition fallback:', err);
-      fallbackBrowserSpeechRecognition();
+      setVoiceNotice('Voice transcription failed. You can type your question directly.');
     } finally {
       setIsTranscribing(false);
     }
   };
 
-  // Fallback: Browser Web Speech API (hi-IN / en-IN)
-  const fallbackBrowserSpeechRecognition = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceNotice('Backend transcription unavailable (ensure GEMINI_API_KEY is configured), and browser Web Speech API is unsupported.');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-
-      setVoiceNotice(`Backend service unavailable. Using browser speech recognition (${recognition.lang}). Note: Audio is processed by the browser vendor's cloud speech service, not Google Gemini.`);
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setQuestion(transcript);
-          setVoiceNotice('Voice captured via browser Web Speech API (processed by browser vendor speech service). You can review or edit before sending.');
-        }
-      };
-
-      recognition.onerror = (e: any) => {
-        setVoiceNotice(`Browser speech recognition error: ${e.error || 'Failed'}`);
-      };
-
-      recognition.start();
-    } catch (e: any) {
-      setVoiceNotice(`Speech recognition failed: ${e.message}`);
-    }
-  };
-
-  // --------------------------------------------------------------------------
-  // Read Aloud (speechSynthesis)
-  // --------------------------------------------------------------------------
-  const handleReadAloud = (textToRead: string, langCode?: string) => {
-    if (!('speechSynthesis' in window)) {
-      setSpeechWarning('Speech synthesis is not supported in this browser.');
-      return;
-    }
-
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
-    }
-
-    setSpeechWarning(null);
-    const utterance = new SpeechSynthesisUtterance(textToRead.replace(/\*\*/g, ''));
-
-    // Check available system voices
-    const voices = window.speechSynthesis.getVoices();
-    const isHindi = langCode === 'hi' || langCode === 'hinglish';
-
-    if (isHindi) {
-      const hindiVoice = voices.find((v) => v.lang.startsWith('hi') || v.lang.includes('Hindi'));
-      if (hindiVoice) {
-        utterance.voice = hindiVoice;
-        utterance.lang = 'hi-IN';
-      } else {
-        setSpeechWarning('No native Hindi voice installed on this system; playing using default system voice.');
-        utterance.lang = 'en-IN';
-      }
-    } else {
-      const englishVoice = voices.find((v) => v.lang.startsWith('en-IN') || v.lang.startsWith('en'));
-      if (englishVoice) {
-        utterance.voice = englishVoice;
-      }
-      utterance.lang = 'en-US';
-    }
-
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  };
-
-  // Helper formatting timer string (MM:SS)
-  const formatTimer = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Safe inline text renderer for **bold** markers
-  const renderFormattedText = (text: string) => {
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <strong key={index} className="font-bold text-slate-900">
-            {part.slice(2, -2)}
-          </strong>
-        );
-      }
-      return part;
-    });
-  };
-
-  // Helper to format table cells with R$ currency when appropriate
-  const formatCellValue = (colName: string, val: any) => {
+  // Plain-text cell formatting
+  const formatCellValue = (colName: string, val: any): string => {
     if (val === null || val === undefined) return '—';
     if (typeof val === 'number') {
-      const colLower = colName.toLowerCase();
-      if (colLower.includes('price') || colLower.includes('revenue') || colLower.includes('amount') || colLower.includes('aov') || colLower.includes('val')) {
-        return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const lower = colName.toLowerCase();
+      if (lower.includes('price') || lower.includes('revenue') || lower.includes('freight') || lower.includes('amount') || lower.includes('value')) {
+        return !isCustomDataset
+          ? `R$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
-      if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate')) {
-        return `${val.toFixed(1)}%`;
-      }
-      return val.toLocaleString();
+      return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2);
     }
     return String(val);
   };
 
-  const rows = response?.rows || [];
-  const columns = response?.columns || (rows.length > 0 ? Object.keys(rows[0]) : []);
-  const stringCol = columns.find((c) => rows.some((r) => typeof r[c] === 'string')) || columns[0];
-  const numericCol = columns.find((c) => rows.some((r) => typeof r[c] === 'number' && !c.toLowerCase().includes('id')));
-  const hasChartData = Boolean(numericCol && stringCol && rows.length > 0 && rows.length <= 50);
-  const chartType = response?.suggested_chart || (stringCol?.toLowerCase().includes('month') || stringCol?.toLowerCase().includes('date') ? 'line' : 'bar');
+  // Determine current active response
+  const activeResponse = isCustomDataset ? datasetResponse : olistResponse;
+  const rows = isCustomDataset ? (datasetResponse?.data_rows || []) : (olistResponse?.rows || []);
+  const columns = isCustomDataset ? (datasetResponse?.columns || []) : (olistResponse?.columns || []);
+  const privacyBadge = isCustomDataset
+    ? (datasetResponse?.privacy_badge || (selectedDataset?.share_samples ? 'AI sees: schema + data' : 'AI sees: schema only'))
+    : null;
+
+  // Chart configuration for response
+  const stringCol = columns.find((c) => {
+    const val = rows[0]?.[c];
+    return typeof val === 'string';
+  });
+  const numericCol = columns.find((c) => {
+    const val = rows[0]?.[c];
+    return typeof val === 'number';
+  });
+  const hasChartData = Boolean(rows.length > 0 && stringCol && numericCol && rows.length <= 50);
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs transition-all font-sans">
-      {/* Top Controls: Language Selector & Audio Notice */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1.5 text-xs text-slate-500 font-medium">
-            <Languages className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Voice & Question Language:</span>
+    <div className="space-y-6">
+      {/* Top Controls: Dataset Selector + Privacy Badge */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Asking Dataset
+              </div>
+              <div className="text-sm font-bold text-slate-900 mt-0.5">
+                Asking: <span className="text-indigo-600">{selectedDataset?.name || 'Olist E-Commerce'}</span>
+              </div>
+            </div>
           </div>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-            <button
-              onClick={() => setSelectedLanguage('auto')}
-              className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                selectedLanguage === 'auto'
-                  ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Auto (स्वचालित)
-            </button>
-            <button
-              onClick={() => setSelectedLanguage('hi')}
-              className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer font-devanagari ${
-                selectedLanguage === 'hi'
-                  ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              हिन्दी (Hindi)
-            </button>
-            <button
-              onClick={() => setSelectedLanguage('en')}
-              className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
-                selectedLanguage === 'en'
-                  ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              English
-            </button>
-          </div>
-        </div>
 
-        <div className="flex items-center space-x-1 text-2xs text-slate-400">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Audio is sent to Google Gemini for transcription and is not stored.</span>
-        </div>
-      </div>
-
-      {/* Input Bar with Mic Recording and Ask Button */}
-      <div className="relative mb-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                selectedLanguage === 'hi'
-                  ? 'हिन्दी या हिंग्लिश में कोई भी व्यावसायिक प्रश्न पूछें (उदा. सबसे ज्यादा बिक्री किस श्रेणी में हुई?)...'
-                  : 'Ask any business question in English, Hindi (Devanagari), or Hinglish...'
-              }
-              disabled={loading || isTranscribing}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-10 py-3.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 transition-all disabled:opacity-50"
-            />
-            {question && (
-              <button
-                onClick={() => setQuestion('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer"
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Dataset Selector Dropdown */}
+            <div className="relative">
+              <select
+                value={selectedDatasetId}
+                onChange={(e) => setSelectedDatasetId(e.target.value)}
+                className="appearance-none bg-slate-50 border border-slate-200 text-slate-800 text-xs font-semibold rounded-xl pl-3 pr-8 py-2 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
               >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Mic Record / Stop Button */}
-          {isRecording ? (
-            <button
-              onClick={stopRecording}
-              className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs px-4 py-3.5 rounded-xl transition-all shadow-xs cursor-pointer animate-pulse"
-              title="Click to stop recording"
-            >
-              <Square className="w-4 h-4 fill-white" />
-              <span>{formatTimer(recordingSeconds)} / 01:00</span>
-            </button>
-          ) : (
-            <button
-              onClick={startRecording}
-              disabled={loading || isTranscribing}
-              className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3.5 py-3.5 rounded-xl border border-slate-200/80 transition-all disabled:opacity-50 cursor-pointer"
-              title="Click to record voice in Hindi, Hinglish, or English"
-            >
-              {isTranscribing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
-                  <span className="hidden sm:inline">Transcribing...</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4 text-indigo-600" />
-                  <span className="hidden sm:inline">Voice</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Ask AI Submit Button */}
-          <button
-            onClick={() => handleAsk()}
-            disabled={loading || isRecording || isTranscribing || !question.trim()}
-            className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-3.5 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:scale-98 cursor-pointer"
-          >
-            {loading ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Querying...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>Ask AI</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Voice Notice or Informational Feedback */}
-      {voiceNotice && (
-        <div className="mb-4 text-xs bg-indigo-50/80 text-indigo-800 border border-indigo-200/70 rounded-xl px-4 py-2.5 flex items-center justify-between">
-          <span>{voiceNotice}</span>
-          <button onClick={() => setVoiceNotice(null)} className="text-indigo-400 hover:text-indigo-700 ml-2 font-bold cursor-pointer">
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Example Prompt Pills */}
-      <div className="mb-6">
-        <div className="flex items-center space-x-1.5 text-xs text-slate-500 mb-2 font-medium">
-          <HelpCircle className="w-3.5 h-3.5 text-indigo-500" />
-          <span>Try asking these example prompts:</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(selectedLanguage === 'hi'
-            ? EXAMPLE_QUESTIONS.hi
-            : selectedLanguage === 'en'
-            ? EXAMPLE_QUESTIONS.en
-            : [...EXAMPLE_QUESTIONS.en.slice(0, 3), ...EXAMPLE_QUESTIONS.hi.slice(0, 2), ...EXAMPLE_QUESTIONS.hinglish.slice(0, 2)]
-          ).map((q, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleAsk(q)}
-              disabled={loading || isRecording}
-              className="text-xs bg-slate-100/80 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 border border-slate-200/80 hover:border-indigo-200 rounded-lg px-3 py-1.5 transition-all text-left disabled:opacity-50 font-medium cursor-pointer"
-            >
-              "{q}"
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Error Message with 503 ErrorBanner */}
-      {error && (
-        <div className="mb-6">
-          <ErrorBanner
-            title={isDbUnavailable ? 'Database Unavailable' : 'Query Processing Error'}
-            message={error}
-            onRetry={() => handleAsk()}
-          />
-        </div>
-      )}
-
-      {/* Loading Skeleton */}
-      {loading && (
-        <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-6 animate-pulse space-y-3">
-          <div className="h-4 bg-slate-200 rounded w-1/4"></div>
-          <div className="h-3 bg-slate-200 rounded w-full"></div>
-          <div className="h-3 bg-slate-200 rounded w-5/6"></div>
-        </div>
-      )}
-
-      {/* Result Card */}
-      {response && !loading && (
-        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl overflow-hidden shadow-xs transition-all space-y-4">
-          {/* Metadata Header Bar */}
-          <div className="bg-white border-b border-slate-200/80 px-5 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center space-x-2 text-slate-500 font-medium">
-              <span>Query:</span>
-              <span className="text-slate-900 font-semibold">"{response.question}"</span>
-              {response.language && (
-                <span className="text-2xs bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md font-mono">
-                  {response.language === 'hi' ? 'हिन्दी' : response.language === 'hinglish' ? 'Hinglish' : 'English'}
-                </span>
-              )}
+                <option value={OLIST_DEMO_ID}>Olist E-Commerce (Demo dataset)</option>
+                {datasets
+                  .filter((d) => !d.is_demo)
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.schema_name})
+                    </option>
+                  ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
-            <div className="flex items-center space-x-2">
+            {/* Privacy Badge for Custom Datasets */}
+            {isCustomDataset && (
               <span
-                className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium border ${
-                  response.route === 'intent'
-                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                    : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${
+                  selectedDataset?.share_samples
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                 }`}
+                title={
+                  selectedDataset?.share_samples
+                    ? 'Sample data values may be sent to AI for narrative explanations'
+                    : 'Strict Privacy: AI receives table/column schema only; zero data rows or cell values are ever transmitted to any LLM'
+                }
               >
-                {response.route === 'intent' ? 'Deterministic Intent Router' : 'Guarded Text-to-SQL'}
-              </span>
-
-              {response.grounding_verified && (
-                <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center space-x-1 font-medium">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  <span>Grounding Verified</span>
+                {selectedDataset?.share_samples ? (
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {selectedDataset?.share_samples ? 'AI sees: schema + data' : 'AI sees: schema only'}
                 </span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Tab Switcher for Uploaded Datasets */}
+        {isCustomDataset && (
+          <div className="flex border-b border-slate-100 mt-5 pt-3 space-x-6 text-xs font-semibold">
+            <button
+              onClick={() => setActiveTab('ask')}
+              className={`pb-2.5 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'ask'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Ask AI</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('insights')}
+              className={`pb-2.5 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'insights'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <BarChart2 className="w-4 h-4" />
+              <span>Quick Insights & Anomalies</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('semantic')}
+              className={`pb-2.5 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'semantic'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>Semantic Layer ({semantic?.status || 'draft'})</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* TAB 1: ASK AI */}
+      {(!isCustomDataset || activeTab === 'ask') && (
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-5">
+          {/* Starter Questions / Clickable Chips */}
+          <div>
+            <div className="flex items-center space-x-2 mb-2.5 text-slate-700 font-bold text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span>
+                {isCustomDataset
+                  ? 'Starter Questions from Semantic Model:'
+                  : 'Suggested Questions (English & Hindi):'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(isCustomDataset && semantic?.starter_questions && semantic.starter_questions.length > 0
+                ? semantic.starter_questions
+                : EXAMPLE_QUESTIONS.en
+              ).map((q, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleAsk(q)}
+                  disabled={loading}
+                  className="px-3 py-1.5 bg-slate-50 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200/80 rounded-xl text-xs text-slate-700 transition cursor-pointer text-left"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Question Input Box + Voice Recording */}
+          <div className="space-y-2">
+            <div className="relative flex items-center">
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isCustomDataset
+                    ? `Ask questions about ${selectedDataset?.name || 'this dataset'}...`
+                    : 'Ask anything about sales, categories, revenue, delivery SLA, or top sellers...'
+                }
+                disabled={loading || isRecording}
+                className="w-full bg-slate-50/70 border border-slate-200/80 rounded-xl pl-4 pr-32 py-3 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+              />
+
+              <div className="absolute right-2 flex items-center space-x-1.5">
+                {/* Voice Input Button */}
+                <button
+                  type="button"
+                  onClick={isRecording ? stopRecording : startRecording}
+                  disabled={loading || isTranscribing}
+                  className={`p-2 rounded-lg transition-colors cursor-pointer ${
+                    isRecording
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
+                  }`}
+                  title={isRecording ? 'Stop recording' : 'Voice input (English / Hindi)'}
+                >
+                  {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+
+                {/* Submit Button */}
+                <button
+                  type="button"
+                  onClick={() => handleAsk()}
+                  disabled={loading || !question.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-lg text-xs shadow-xs transition cursor-pointer flex items-center space-x-1"
+                >
+                  {loading ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <span>Ask AI</span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Voice Notice */}
+            {voiceNotice && (
+              <div className="text-2xs text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg p-2 flex items-center space-x-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span>{voiceNotice}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Error Banner on 503 / 504 / Quota Limit */}
+          {error && (
+            <ErrorBanner
+              message={error}
+              onRetry={() => handleAsk()}
+            />
+          )}
+
+          {/* AI Response Card */}
+          {activeResponse && (
+            <div className="border border-slate-200/80 rounded-xl bg-slate-50/50 divide-y divide-slate-100 overflow-hidden">
+              {/* Header: Status + Privacy Badge */}
+              <div className="px-5 py-3.5 bg-white flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span className="font-bold text-xs text-slate-800">
+                    Query Answer & Summary
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  {privacyBadge && (
+                    <span className="px-2.5 py-0.5 rounded-full text-2xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {privacyBadge}
+                    </span>
+                  )}
+                  <span className="text-2xs font-mono text-slate-400">
+                    {isCustomDataset && datasetResponse?.execution_time_ms
+                      ? `${datasetResponse.execution_time_ms.toFixed(0)}ms`
+                      : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Grounded Narrative or Deterministic Template Summary */}
+              <div className="p-5 bg-white text-xs sm:text-sm text-slate-800 leading-relaxed font-sans">
+                {activeResponse.explanation}
+              </div>
+
+              {/* Action Controls: Show SQL, Show Records */}
+              <div className="px-5 py-2.5 bg-slate-50 flex items-center justify-between text-xs">
+                {activeResponse.sql ? (
+                  <button
+                    onClick={() => setShowSql(!showSql)}
+                    className="flex items-center space-x-1.5 font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+                  >
+                    <Code className="w-3.5 h-3.5" />
+                    <span>{showSql ? 'Hide SQL Query' : 'Show Generated SQL'}</span>
+                    {showSql ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                ) : <div />}
+
+                {rows.length > 0 && (
+                  <button
+                    onClick={() => setShowTable(!showTable)}
+                    className="flex items-center space-x-1 font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                  >
+                    <TableIcon className="w-3.5 h-3.5" />
+                    <span>{showTable ? 'Hide Table' : `Show Records (${rows.length})`}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* SQL Code Block */}
+              {showSql && activeResponse.sql && (
+                <div className="p-4 bg-slate-900 text-xs font-mono text-emerald-400 overflow-x-auto shadow-inner">
+                  <div className="text-slate-500 text-2xs mb-1">// Validated PostgreSQL SELECT</div>
+                  <pre className="text-emerald-300 whitespace-pre-wrap">{activeResponse.sql}</pre>
+                </div>
               )}
 
-              {/* Read Aloud Button */}
-              <button
-                onClick={() => handleReadAloud(response.explanation, response.language)}
-                className={`text-[11px] px-2.5 py-0.5 rounded-full border flex items-center space-x-1 font-medium transition cursor-pointer ${
-                  isSpeaking
-                    ? 'bg-indigo-600 text-white border-indigo-600'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                }`}
-                title="Read answer aloud"
-              >
-                {isSpeaking ? (
-                  <>
-                    <VolumeX className="w-3 h-3" />
-                    <span>Stop Voice</span>
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="w-3 h-3" />
-                    <span>Read Aloud</span>
-                  </>
-                )}
-              </button>
+              {/* Suggested Chart */}
+              {hasChartData && (
+                <div className="p-5 bg-white">
+                  <div className="flex items-center justify-between mb-3 text-xs">
+                    <span className="font-bold text-slate-800 flex items-center space-x-1.5">
+                      <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Data Visualization: {stringCol} vs {numericCol}</span>
+                    </span>
+                  </div>
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <Tooltip />
+                        <Bar dataKey={numericCol || 'value'} fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* Data Rows Table (Plain text rendering, no raw HTML) */}
+              {showTable && rows.length > 0 && (
+                <div className="bg-white overflow-hidden">
+                  <div className="overflow-x-auto max-h-64">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50/70 text-slate-500 font-semibold border-b border-slate-200/60 uppercase tracking-wider text-2xs sticky top-0">
+                        <tr>
+                          {columns.map((col, idx) => (
+                            <th key={idx} className="py-2 px-4 font-mono">{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
+                        {rows.map((row, rIdx) => (
+                          <tr key={rIdx} className="hover:bg-slate-50/60 transition">
+                            {columns.map((col, cIdx) => (
+                              <td key={cIdx} className="py-2 px-4 whitespace-nowrap">
+                                {formatCellValue(col, row[col])}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: QUICK INSIGHTS & ANOMALIES */}
+      {isCustomDataset && activeTab === 'insights' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Pre-Computed Insights & Outliers</h2>
+              <p className="text-xs text-slate-500">
+                Deterministic time-trend, categorical rankings, distribution charts, and rolling MAD anomalies.
+              </p>
+            </div>
+            <button
+              onClick={() => loadQuickInsights(selectedDatasetId)}
+              disabled={insightsLoading}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${insightsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh Insights</span>
+            </button>
           </div>
 
-          {/* Speech Warning (e.g. no Hindi voice installed) */}
-          {speechWarning && (
-            <div className="mx-5 text-2xs bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-lg flex items-center space-x-1">
-              <AlertCircle className="w-3 h-3 text-amber-600" />
-              <span>{speechWarning}</span>
+          {insightsError && (
+            <div className="p-4 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-200">
+              {insightsError}
             </div>
           )}
 
-          {/* Explanation Body */}
-          <div className="px-5 text-sm leading-relaxed text-slate-800 space-y-2">
-            {response.explanation.split('\n').map((line, idx) => {
-              if (!line.trim()) return <div key={idx} className="h-1" />;
-              return (
-                <p key={idx} className="mb-1.5 last:mb-0">
-                  {renderFormattedText(line)}
-                </p>
-              );
-            })}
-          </div>
-
-          {/* Assumptions List */}
-          {response.assumptions && response.assumptions.length > 0 && (
-            <div className="px-5 text-2xs text-slate-500">
-              <span className="font-semibold text-slate-600">Assumptions applied:</span>{' '}
-              {response.assumptions.join(' • ')}
-            </div>
-          )}
-
-          {/* Action Tabs: Show SQL / Show Data Table */}
-          <div className="px-5 flex items-center space-x-4 border-t border-slate-200/80 pt-3 text-xs">
-            {response.sql && (
-              <button
-                onClick={() => setShowSql(!showSql)}
-                className="flex items-center space-x-1 font-semibold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
-              >
-                <Code className="w-3.5 h-3.5" />
-                <span>{showSql ? 'Hide SQL Query' : 'Show Generated SQL'}</span>
-                {showSql ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-            )}
-
-            {rows.length > 0 && (
-              <button
-                onClick={() => setShowTable(!showTable)}
-                className="flex items-center space-x-1 font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
-              >
-                <TableIcon className="w-3.5 h-3.5" />
-                <span>{showTable ? 'Hide Table' : `Show Records (${response.row_count})`}</span>
-              </button>
-            )}
-          </div>
-
-          {/* "Show SQL" Collapsible Panel */}
-          {showSql && response.sql && (
-            <div className="mx-5 bg-slate-900 rounded-xl p-4 text-xs font-mono text-emerald-400 overflow-x-auto shadow-inner">
-              <div className="text-slate-500 text-2xs mb-1">// Validated & Sanitized SQL (PostgreSQL readonly_engine)</div>
-              <pre className="text-emerald-300 whitespace-pre-wrap">{response.sql}</pre>
-            </div>
-          )}
-
-          {/* Suggested Chart Preview */}
-          {hasChartData && (
-            <div className="mx-5 bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs">
-              <div className="flex items-center justify-between mb-3 text-xs">
-                <span className="font-bold text-slate-800 flex items-center space-x-1.5">
-                  {chartType === 'line' ? <TrendingUp className="w-3.5 h-3.5 text-indigo-600" /> : <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />}
-                  <span>Suggested Chart: {chartType === 'line' ? 'Time-Series Trend' : 'Categorical Comparison'}</span>
-                </span>
-                <span className="text-2xs text-slate-400 font-mono">
-                  {stringCol} vs {numericCol}
-                </span>
+          {/* 3 Insight Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Chart 1: Time Trend */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center space-x-2 text-indigo-600 mb-1">
+                  <TrendingUp className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Trend over Time</span>
+                </div>
+                <h3 className="text-xs font-bold text-slate-900 mb-3">
+                  {insights?.time_trend?.title || 'Time Series Trend'}
+                </h3>
               </div>
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  {chartType === 'line' ? (
-                    <LineChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+
+              {insights?.time_trend && insights.time_trend.data.length > 0 ? (
+                <div className="h-48 w-full my-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={insights.time_trend.data}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                      <XAxis dataKey={insights.time_trend.x_axis} fontSize={9} stroke="#94a3b8" />
+                      <YAxis fontSize={9} stroke="#94a3b8" />
                       <Tooltip />
-                      <Line type="monotone" dataKey={numericCol || 'value'} stroke="#4f46e5" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey={insights.time_trend.y_axis} stroke="#4f46e5" strokeWidth={2} dot={{ r: 2 }} />
                     </LineChart>
-                  ) : (
-                    <BarChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
-                      <Tooltip />
-                      <Bar dataKey={numericCol || 'value'} fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-48 flex items-center justify-center text-xs text-slate-400">
+                  No date or time column available
+                </div>
+              )}
 
-          {/* Result Data Table */}
-          {showTable && rows.length > 0 && (
-            <div className="mx-5 mb-5 bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs">
-              <div className="px-4 py-2 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between text-2xs text-slate-600">
-                <span className="font-semibold uppercase tracking-wider">Query Records ({rows.length})</span>
-                <span>Capped at max 500 rows</span>
+              {insights?.time_trend?.sql && (
+                <div className="mt-3 p-2 bg-slate-900 rounded-lg text-2xs font-mono text-emerald-400 overflow-x-auto">
+                  <pre className="whitespace-pre-wrap">{insights.time_trend.sql}</pre>
+                </div>
+              )}
+            </div>
+
+            {/* Chart 2: Top-N */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center space-x-2 text-indigo-600 mb-1">
+                  <BarChart2 className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Top Rankings</span>
+                </div>
+                <h3 className="text-xs font-bold text-slate-900 mb-3">
+                  {insights?.top_n?.title || 'Top Categories'}
+                </h3>
               </div>
-              <div className="overflow-x-auto max-h-64">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50/50 text-slate-500 font-semibold border-b border-slate-200/60 uppercase tracking-wider text-2xs sticky top-0">
+
+              {insights?.top_n && insights.top_n.data.length > 0 ? (
+                <div className="h-48 w-full my-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={insights.top_n.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey={insights.top_n.x_axis} fontSize={9} stroke="#94a3b8" />
+                      <YAxis fontSize={9} stroke="#94a3b8" />
+                      <Tooltip />
+                      <Bar dataKey={insights.top_n.y_axis} fill="#4f46e5" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-48 flex items-center justify-center text-xs text-slate-400">
+                  No categorical dimensions available
+                </div>
+              )}
+
+              {insights?.top_n?.sql && (
+                <div className="mt-3 p-2 bg-slate-900 rounded-lg text-2xs font-mono text-emerald-400 overflow-x-auto">
+                  <pre className="whitespace-pre-wrap">{insights.top_n.sql}</pre>
+                </div>
+              )}
+            </div>
+
+            {/* Chart 3: Distribution */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center space-x-2 text-indigo-600 mb-1">
+                  <PieChartIcon className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Segment Distribution</span>
+                </div>
+                <h3 className="text-xs font-bold text-slate-900 mb-3">
+                  {insights?.distribution?.title || 'Record Distribution'}
+                </h3>
+              </div>
+
+              {insights?.distribution && insights.distribution.data.length > 0 ? (
+                <div className="h-48 w-full my-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={insights.distribution.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey={insights.distribution.x_axis} fontSize={9} stroke="#94a3b8" />
+                      <YAxis fontSize={9} stroke="#94a3b8" />
+                      <Tooltip />
+                      <Bar dataKey={insights.distribution.y_axis} fill="#0ea5e9" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-48 flex items-center justify-center text-xs text-slate-400">
+                  No segment distribution available
+                </div>
+              )}
+
+              {insights?.distribution?.sql && (
+                <div className="mt-3 p-2 bg-slate-900 rounded-lg text-2xs font-mono text-emerald-400 overflow-x-auto">
+                  <pre className="whitespace-pre-wrap">{insights.distribution.sql}</pre>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Anomalies Table */}
+          {insights && insights.anomalies && insights.anomalies.length > 0 && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 flex items-center space-x-2 text-rose-600">
+                <AlertCircle className="w-4 h-4" />
+                <span>Statistical Outliers Detected ({insights.anomalies.length})</span>
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-2xs">
                     <tr>
-                      {columns.map((col, idx) => (
-                        <th key={idx} className="py-2.5 px-4 font-mono">{col}</th>
-                      ))}
+                      <th className="p-2.5">Period</th>
+                      <th className="p-2.5">Metric</th>
+                      <th className="p-2.5">Actual</th>
+                      <th className="p-2.5">Expected</th>
+                      <th className="p-2.5">Deviation</th>
+                      <th className="p-2.5">Severity</th>
+                      <th className="p-2.5">Direction</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
-                    {rows.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-slate-50/60 transition">
-                        {columns.map((col, cIdx) => (
-                          <td key={cIdx} className="py-2 px-4 whitespace-nowrap">
-                            {formatCellValue(col, row[col])}
-                          </td>
-                        ))}
+                  <tbody className="divide-y divide-slate-100">
+                    {insights.anomalies.map((anom, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2.5">{anom.period}</td>
+                        <td className="p-2.5">{anom.metric}</td>
+                        <td className="p-2.5 font-bold">{anom.actual_value.toFixed(2)}</td>
+                        <td className="p-2.5 text-slate-400">{anom.expected_value.toFixed(2)}</td>
+                        <td className="p-2.5">{anom.deviation_pct.toFixed(1)}%</td>
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-2xs font-bold ${
+                            anom.severity === 'high' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {anom.severity}
+                          </span>
+                        </td>
+                        <td className="p-2.5">{anom.direction}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -738,6 +894,113 @@ export const AskInsightForge: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 3: SEMANTIC LAYER REVIEW */}
+      {isCustomDataset && activeTab === 'semantic' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-sm font-bold text-slate-900">Semantic Model Review</h2>
+                <span className={`px-2 py-0.5 rounded text-2xs font-bold uppercase tracking-wider ${
+                  semantic?.status === 'confirmed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {semantic?.status || 'draft'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Verify measures, dimensions, and relationship cardinalities used for AI Text-to-SQL queries.
+              </p>
+            </div>
+
+            <button
+              onClick={handleConfirmSemantic}
+              disabled={semanticConfirming || semantic?.status === 'confirmed'}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>{semantic?.status === 'confirmed' ? 'Model Confirmed' : 'Confirm Semantic Model'}</span>
+            </button>
+          </div>
+
+          {semanticSuccessMsg && (
+            <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>{semanticSuccessMsg}</span>
+            </div>
+          )}
+
+          {/* Measures Table */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+              Measures ({semantic?.semantic_model.measures.length || 0})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-2xs">
+                  <tr>
+                    <th className="p-2.5">Display Name</th>
+                    <th className="p-2.5">Table</th>
+                    <th className="p-2.5">Column</th>
+                    <th className="p-2.5">Aggregation</th>
+                    <th className="p-2.5">Synonyms</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {semantic?.semantic_model.measures.map((m, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-2.5 font-bold font-sans">{m.name}</td>
+                      <td className="p-2.5">{m.table}</td>
+                      <td className="p-2.5">{m.column || 'COUNT(*)'}</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-2xs font-bold">
+                          {m.aggregation}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-500 font-sans text-2xs">
+                        {m.synonyms.join(', ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Dimensions Table */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+              Dimensions ({semantic?.semantic_model.dimensions.length || 0})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-2xs">
+                  <tr>
+                    <th className="p-2.5">Display Name</th>
+                    <th className="p-2.5">Table</th>
+                    <th className="p-2.5">Column</th>
+                    <th className="p-2.5">Type</th>
+                    <th className="p-2.5">Synonyms</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {semantic?.semantic_model.dimensions.map((d, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-2.5 font-bold font-sans">{d.name}</td>
+                      <td className="p-2.5">{d.table}</td>
+                      <td className="p-2.5">{d.column}</td>
+                      <td className="p-2.5 text-slate-400">{d.data_type}</td>
+                      <td className="p-2.5 text-slate-500 font-sans text-2xs">
+                        {d.synonyms.join(', ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>

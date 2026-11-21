@@ -18,7 +18,11 @@ import {
   DatasetSummary,
   DatasetProfile,
   UploadDatasetResponse,
-  TablePreviewResponse
+  TablePreviewResponse,
+  DatasetSemanticResponse,
+  UpdateDatasetSemanticRequest,
+  DatasetAskResponse,
+  DatasetInsightsResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
@@ -184,6 +188,42 @@ export const api = {
     await client.delete(`/datasets/${id}`, {
       headers: { 'X-Owner-Token': getOwnerToken() },
     });
+  },
+
+  getDatasetSemantic: async (id: string): Promise<DatasetSemanticResponse> => {
+    const res = await client.get<DatasetSemanticResponse>(`/datasets/${id}/semantic`, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  generateDatasetSemantic: async (id: string): Promise<DatasetSemanticResponse> => {
+    const res = await client.post<DatasetSemanticResponse>(`/datasets/${id}/semantic/generate`, {}, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  updateDatasetSemantic: async (id: string, updates: UpdateDatasetSemanticRequest): Promise<DatasetSemanticResponse> => {
+    const res = await client.patch<DatasetSemanticResponse>(`/datasets/${id}/semantic`, updates, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
+  },
+
+  askDataset: async (id: string, question: string, language: string = 'auto'): Promise<DatasetAskResponse> => {
+    const res = await client.post<DatasetAskResponse>(`/datasets/${id}/ask`, { question, language }, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+      timeout: 45000,
+    });
+    return res.data;
+  },
+
+  getDatasetInsights: async (id: string): Promise<DatasetInsightsResponse> => {
+    const res = await client.get<DatasetInsightsResponse>(`/datasets/${id}/insights`, {
+      headers: { 'X-Owner-Token': getOwnerToken() },
+    });
+    return res.data;
   },
 };
 

@@ -26,12 +26,20 @@ from sqlalchemy import text
 from backend.app.config import settings
 from backend.app.database import readonly_engine
 from backend.app.exceptions import DatabaseUnavailableError
+from backend.app.fixture_guard import is_fixture_mode
 from backend.app.schemas.ai import SQLAskResponse
-from backend.app.services.sql_validator import SQLValidator
+from backend.app.schemas.dataset_semantic import (
+    DatasetAskResponse,
+    DatasetSemanticResponse,
+    SemanticModel,
+)
+from backend.app.services.sql_validator import DatasetSQLContext, SQLValidator
 from backend.app.services.ai_service import AIService, detect_language
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter, SUPPORTED_INTENTS
 from backend.app.services.grounding import verify_numeric_grounding
 from backend.app.services.audit_service import AIAuditService
+from backend.app.services.dataset_service import DatasetService
+from backend.app.services.dataset_semantic_service import DatasetSemanticService
 
 try:
     from google.genai import types
@@ -488,4 +496,303 @@ Do NOT include any markdown code blocks or text outside the JSON object.
             grounding_verified=is_grounded,
             suggested_chart=gen_result.get("suggested_chart", "table"),
             error=None
+        )
+
+    @classmethod
+    def build_dataset_generation_prompt(
+        cls,
+        question: str,
+        profile: Any,
+        semantic_model: SemanticModel,
+        previous_error: Optional[str] = None,
+        previous_sql: Optional[str] = None
+    ) -> str:
+        """Builds Gemini prompt for dataset workspace Q&A."""
+        schema_name = profile.schema_name
+        is_demo = (schema_name == "insightforge")
+
+        tables_desc = []
+        for t in profile.tables:
+            col_list = [f"{c.safe_name} ({c.pg_type})" for c in t.columns]
+            tables_desc.append(f"- Table `{t.safe_name}`: " + ", ".join(col_list))
+
+        measures_desc = [
+            f"- {m.name} ({m.safe_name}): {m.formula or m.aggregation + '(' + (m.column or '*') + ')'}"
+            for m in semantic_model.measures
+        ]
+        dimensions_desc = [
+            f"- {d.name} ({d.safe_name}): {d.table}.{d.column}"
+            for d in semantic_model.dimensions
+        ]
+        rel_desc = [
+            f"- {r.parent_table}.{r.parent_column} -> {r.child_table}.{r.child_column} ({r.cardinality})"
+            for r in semantic_model.relationships
+        ]
+
+        qualification_rule = (
+            f"QUALIFICATION RULE: All tables MUST be schema-qualified with '{schema_name}.<table_name>', e.g. '{schema_name}.{profile.tables[0].safe_name if profile.tables else 'table'}'."
+            if not is_demo else
+            "QUALIFICATION RULE: Query the standard tables directly without schema prefix."
+        )
+
+        correction_section = ""
+        if previous_error and previous_sql:
+            correction_section = f"""
+CRITICAL SELF-CORRECTION NOTICE:
+Your previous generated SQL was REJECTED:
+Previous SQL:
+```sql
+{previous_sql}
+```
+Validation/Database Error:
+"{previous_error}"
+
+Please fix this error immediately in your new query. Ensure all referenced tables belong to this dataset and are properly qualified, do not cause fan-out duplication, and output a valid PostgreSQL SELECT statement.
+"""
+
+        prompt = f"""
+You are InsightForge's Expert PostgreSQL Data Analyst.
+Your task is to convert the natural language business question into a single, highly performant, guarded PostgreSQL SELECT query for the '{profile.name}' dataset.
+
+{qualification_rule}
+CRITICAL RULES:
+1. Output exactly ONE standalone PostgreSQL SELECT query. No DDL, no DML, no cross joins, no multiple statements.
+2. FAN-OUT RULE: When joining a 1:N relationship, never aggregate columns from the 1-side without pre-aggregating in a CTE or subquery.
+3. NEVER reference any table outside this dataset.
+
+DATASET SCHEMA:
+{chr(10).join(tables_desc)}
+
+SEMANTIC MEASURES:
+{chr(10).join(measures_desc)}
+
+SEMANTIC DIMENSIONS:
+{chr(10).join(dimensions_desc)}
+
+RELATIONSHIPS:
+{chr(10).join(rel_desc) if rel_desc else "None"}
+
+{correction_section}
+
+USER QUESTION: "{question}"
+
+You must respond ONLY with a valid JSON object matching the following schema:
+{{
+  "sql": "SELECT ...",
+  "explanation": "Concise 1-3 sentence explanation of what the query calculates.",
+  "assumptions": ["List of any filters, defaults, or date bounds applied"],
+  "suggested_chart": "bar" | "line" | "pie" | "table"
+}}
+"""
+        return prompt.strip()
+
+    @classmethod
+    def ask_dataset_sql(
+        cls,
+        dataset_id: str,
+        question: str,
+        owner_token: Optional[str] = None,
+        language: str = "auto"
+    ) -> DatasetAskResponse:
+        """
+        Executes guarded dataset-aware Text-to-SQL for dataset workspace.
+        Enforces tenant isolation, schema qualification, privacy model, and audit logging.
+        """
+        start_time = time.time()
+        # Verify access & retrieve profile
+        profile = DatasetService.get_dataset_profile(dataset_id, owner_token=owner_token)
+        semantic_resp = DatasetSemanticService.get_semantic(dataset_id, owner_token=owner_token)
+        semantic_model = semantic_resp.semantic_model
+
+        schema_name = profile.schema_name
+        is_demo = (schema_name == "insightforge")
+
+        sql_context = DatasetSQLContext(
+            schema_name=schema_name,
+            allowed_tables={t.safe_name for t in profile.tables},
+            relationships=[r.model_dump() for r in profile.relationships],
+            table_columns={t.safe_name: {c.safe_name for c in t.columns} for t in profile.tables},
+            is_demo=is_demo
+        )
+
+        client = AIService._get_genai_client()
+        if not client:
+            latency_ms = (time.time() - start_time) * 1000.0
+            return DatasetAskResponse(
+                question=question,
+                sql="",
+                explanation="Gemini API key is not configured. Text-to-SQL dynamic generation requires GEMINI_API_KEY.",
+                suggested_chart="table",
+                assumptions=[],
+                data_rows=[],
+                columns=[],
+                privacy_badge="AI sees: schema only",
+                execution_time_ms=latency_ms,
+                row_count=0
+            )
+
+        attempt = 0
+        max_retries = 2
+        last_error = None
+        last_sql = None
+        gen_result = None
+
+        while attempt <= max_retries:
+            prompt = cls.build_dataset_generation_prompt(
+                question=question,
+                profile=profile,
+                semantic_model=semantic_model,
+                previous_error=last_error,
+                previous_sql=last_sql
+            )
+            try:
+                gen_config = types.GenerateContentConfig(temperature=0.0) if types else None
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt,
+                    config=gen_config
+                )
+                text_resp = response.text.strip()
+                cleaned_json = re.sub(r"^```(?:json)?\s*", "", text_resp, flags=re.MULTILINE)
+                cleaned_json = re.sub(r"\s*```$", "", cleaned_json, flags=re.MULTILINE).strip()
+                parsed_json = json.loads(cleaned_json)
+
+                raw_sql = parsed_json.get("sql", "")
+                last_sql = raw_sql
+
+                # 1. AST Validation with DatasetSQLContext
+                is_valid, sanitized_sql, val_error = SQLValidator.validate(raw_sql, context=sql_context)
+                if not is_valid:
+                    last_error = f"Validation Error: {val_error}"
+                    logger.warning(f"Dataset Text-to-SQL attempt {attempt + 1} validation failed: {last_error}")
+                    attempt += 1
+                    continue
+
+                # 2. Database Execution in schema
+                if is_fixture_mode():
+                    rows, cols = [], []
+                else:
+                    with readonly_engine.connect() as conn:
+                        conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
+                        result = conn.execute(text(sanitized_sql))
+                        cols = list(result.keys())
+                        raw_rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
+                        rows = []
+                        for r in raw_rows:
+                            clean_r = {}
+                            for k, v in r.items():
+                                if hasattr(v, "isoformat"):
+                                    clean_r[k] = v.isoformat()
+                                elif isinstance(v, (int, float)) or v is None:
+                                    clean_r[k] = v
+                                else:
+                                    clean_r[k] = str(v)
+                            rows.append(clean_r)
+
+                gen_result = {
+                    "success": True,
+                    "sql": sanitized_sql,
+                    "explanation": parsed_json.get("explanation", ""),
+                    "assumptions": parsed_json.get("assumptions", []),
+                    "suggested_chart": parsed_json.get("suggested_chart", "table"),
+                    "rows": rows,
+                    "columns": cols
+                }
+                break
+
+            except DatabaseUnavailableError:
+                raise
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    latency_ms = (time.time() - start_time) * 1000.0
+                    return DatasetAskResponse(
+                        question=question,
+                        sql="",
+                        explanation="AI quota reached. Please try again later or consult the pre-computed dataset insights.",
+                        suggested_chart="table",
+                        assumptions=[],
+                        data_rows=[],
+                        columns=[],
+                        privacy_badge="AI sees: schema only",
+                        execution_time_ms=latency_ms,
+                        row_count=0
+                    )
+                last_error = f"Execution/Format Error: {err_str}"
+                logger.warning(f"Dataset Text-to-SQL attempt {attempt + 1} failed: {last_error}")
+                attempt += 1
+
+        latency_ms = (time.time() - start_time) * 1000.0
+
+        if not gen_result or not gen_result.get("success"):
+            AIAuditService.log(
+                question=f"[dataset:{dataset_id}] {question}",
+                intent="dataset_text_to_sql",
+                generated_sql=last_sql,
+                latency_ms=latency_ms,
+                success=False,
+                error=last_error
+            )
+            return DatasetAskResponse(
+                question=question,
+                sql=last_sql or "",
+                explanation=f"Unable to safely generate a validated SQL query for this question ({last_error}).",
+                suggested_chart="table",
+                assumptions=[],
+                data_rows=[],
+                columns=[],
+                privacy_badge="AI sees: schema only",
+                execution_time_ms=latency_ms,
+                row_count=0
+            )
+
+        rows = gen_result["rows"]
+        cols = gen_result["columns"]
+        sql_used = gen_result["sql"]
+        suggested_chart = gen_result["suggested_chart"]
+        assumptions = gen_result["assumptions"]
+
+        # Privacy model enforcement:
+        if not profile.share_samples:
+            # Deterministic template summary WITHOUT LLM narrative
+            privacy_badge = "AI sees: schema only"
+            if not rows:
+                explanation = "The query executed successfully and returned 0 rows."
+            elif len(rows) == 1:
+                vals = [f"{k}: {v}" for k, v in rows[0].items() if isinstance(v, (int, float))]
+                val_str = ", ".join(vals) if vals else f"1 record with {len(cols)} columns"
+                explanation = f"Query executed successfully returning 1 row. Result: {val_str}."
+            else:
+                top_r = rows[0]
+                vals = [f"{k}={v}" for k, v in top_r.items() if isinstance(v, (int, float))]
+                val_str = f" Top row: {', '.join(vals)}." if vals else ""
+                explanation = f"Query returned {len(rows)} rows across columns `{', '.join(cols)}`.{val_str}"
+        else:
+            # share_samples is True: LLM narrative allowed, verified by grounding
+            privacy_badge = "AI sees: schema + data"
+            explanation = gen_result["explanation"]
+            if not verify_numeric_grounding(explanation, rows):
+                explanation = cls.synthesize_fallback_explanation(rows, cols)
+
+        # Log audit without cell values
+        AIAuditService.log(
+            question=f"[dataset:{dataset_id}] {question}",
+            intent="dataset_text_to_sql",
+            generated_sql=sql_used,
+            latency_ms=latency_ms,
+            success=True,
+            error=None
+        )
+
+        return DatasetAskResponse(
+            question=question,
+            sql=sql_used,
+            explanation=explanation,
+            suggested_chart=suggested_chart,
+            assumptions=assumptions,
+            data_rows=rows,
+            columns=cols,
+            privacy_badge=privacy_badge,
+            execution_time_ms=latency_ms,
+            row_count=len(rows)
         )
