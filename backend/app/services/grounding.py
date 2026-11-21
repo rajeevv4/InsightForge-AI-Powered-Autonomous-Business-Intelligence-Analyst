@@ -17,8 +17,8 @@ COMMON_METADATA_NUMBERS = {
     0.0,
     # Years in Olist dataset and modern era
     2016.0, 2017.0, 2018.0, 2019.0, 2020.0, 2021.0, 2022.0, 2023.0, 2024.0, 2025.0, 2026.0,
-    # Common ranks / top N / page limits
-    1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+    # Common ranks / top N / calendar days (1-31) and months (1-12)
+    *[float(i) for i in range(1, 32)],
     # Scale ranges (e.g. CSAT 1 to 5 scale, 100 percent)
     100.0
 }

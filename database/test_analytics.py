@@ -30,7 +30,9 @@ class TestInsightForgeAnalytics(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        os.environ["USE_FIXTURES"] = "1"
+        # Default to fixtures for standalone runs, but allow USE_FIXTURES=0 for live DB verification
+        if os.getenv("USE_FIXTURES") != "0":
+            os.environ.setdefault("USE_FIXTURES", "1")
         cls.engine = get_db_engine()
         cls.kpis = get_summary_kpis()
 

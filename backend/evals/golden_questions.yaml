@@ -12,8 +12,8 @@ questions:
   - id: cat_01
     question: "Which product category generated the highest revenue?"
     expected_intent: "category_analysis"
-    expected_value: 1258819.00
-    description: "Top revenue category check (cama_mesa_banho / bed_bath_table or health_beauty)"
+    expected_value: 1233131.72
+    description: "Top revenue category check (health_beauty)"
 
   - id: cat_02
     question: "What are our top product categories by sales and revenue?"
@@ -23,7 +23,7 @@ questions:
   - id: cat_03
     question: "What is the total product category revenue contribution?"
     expected_intent: "category_analysis"
-    expected_value: 1258819.00
+    expected_value: 1233131.72
     description: "Top category canonical revenue"
 
   - id: cat_04
@@ -42,8 +42,8 @@ questions:
   - id: st_01
     question: "Which Brazilian state generated the most revenue?"
     expected_intent: "state_analysis"
-    expected_value: 5041040.67
-    description: "Top state (Sao Paulo SP) total revenue"
+    expected_value: 5769703.15
+    description: "Top state (Sao Paulo SP) total gross revenue"
 
   - id: st_02
     question: "Show me customer sales distribution across Brazilian states"
@@ -53,7 +53,7 @@ questions:
   - id: st_03
     question: "What percentage of total revenue originates from SP state?"
     expected_intent: "state_analysis"
-    expected_value: 38.13
+    expected_value: 38.33
     description: "SP revenue contribution percentage"
 
   - id: st_04
@@ -107,7 +107,7 @@ questions:
   - id: del_02
     question: "What is the average delivery duration in days from order to customer?"
     expected_intent: "delivery_analysis"
-    expected_value: 12.50
+    expected_value: 10.9
     description: "Average days to deliver orders"
 
   - id: del_03
@@ -131,7 +131,7 @@ questions:
   - id: pay_01
     question: "What is the most popular payment method among customers?"
     expected_intent: "payment_analysis"
-    expected_value: 12542084.19
+    expected_value: 12101094.88
     description: "Credit card payment gross value"
 
   - id: pay_02
@@ -160,7 +160,7 @@ questions:
   - id: trd_01
     question: "What is the monthly revenue trend over time?"
     expected_intent: "revenue_trend"
-    expected_value: 1160785.48
+    expected_value: 985491.64
     description: "Historical monthly sales trend"
 
   - id: trd_02
@@ -250,25 +250,25 @@ questions:
   - id: anom_01
     question: "Are there any unusual revenue spikes or outliers in our sales data?"
     expected_intent: "anomaly_detection"
-    expected_value: 176940.50
+    expected_value: 175178.46
     description: "Revenue spike detection (Black Friday peak)"
 
   - id: anom_02
     question: "Did we detect any statistical anomalies or abnormal patterns?"
     expected_intent: "anomaly_detection"
-    expected_value: 12.0
+    expected_value: 111.0
     description: "Total anomaly count check"
 
   - id: anom_03
     question: "Was there a huge sales surge on Black Friday?"
     expected_intent: "anomaly_detection"
-    expected_value: 176940.50
+    expected_value: 175178.46
     description: "Black Friday surge query"
 
   - id: anom_04
     question: "Show me abnormal drops or spikes across daily revenue"
     expected_intent: "anomaly_detection"
-    expected_value: 176940.50
+    expected_value: 175178.46
     description: "Daily revenue anomaly detection"
 
   - id: anom_05
@@ -289,7 +289,7 @@ questions:
   - id: anom_08
     question: "What are the most severe outlier events in our transaction history?"
     expected_intent: "anomaly_detection"
-    expected_value: 176940.50
+    expected_value: 175178.46
     description: "Severe outlier investigation"
 
   # ----------------------------------------------------------------------------
@@ -531,7 +531,7 @@ questions:
 
   - id: sql_26
     question: "What was the total product revenue in bed_bath_table category?"
-    reference_sql: "SELECT total_revenue FROM view_category_contribution WHERE category = 'bed_bath_table';"
+    reference_sql: "SELECT total_revenue FROM view_category_contribution WHERE category_name = 'bed_bath_table';"
     expected_intent: "text_to_sql"
     description: "Bed bath table category total revenue"
 

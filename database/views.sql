@@ -113,6 +113,7 @@ order_avg_review AS (
 )
 SELECT 
     COALESCE(p.product_category_name_english, 'Uncategorized') AS category_name,
+    COALESCE(p.product_category_name_english, 'Uncategorized') AS category,
     COUNT(DISTINCT oi.order_id) AS total_orders,
     COUNT(oi.order_item_id) AS units_sold,
     SUM(oi.price) AS total_revenue,
@@ -132,6 +133,7 @@ ORDER BY total_revenue DESC;
 CREATE VIEW view_category_performance AS
 SELECT 
     category_name,
+    category_name AS category,
     total_orders,
     units_sold AS total_units_sold,
     total_revenue,

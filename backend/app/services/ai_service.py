@@ -276,7 +276,7 @@ User Question: "{question}"
             rev = latest.get("gross_revenue", 0)
             orders = latest.get("delivered_order_count") or latest.get("total_orders", 0)
             return (
-                f"Monthly revenue trend analytics cover {len(data)} consecutive months. "
+                f"Monthly revenue trend analytics cover consecutive monthly periods. "
                 f"In the most recent recorded month ({m}), total gross revenue reached **R$ {rev:,.2f}** "
                 f"across {orders:,} fulfilled orders."
             )

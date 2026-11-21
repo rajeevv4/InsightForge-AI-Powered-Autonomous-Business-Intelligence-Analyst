@@ -97,7 +97,7 @@ POSTGRESQL SCHEMA & ALLOWED TABLES (insightforge schema):
 CANONICAL ANALYTICAL VIEWS:
 - view_order_level_summary (order_id, customer_id, order_status, order_purchase_timestamp, item_count, total_product_amount, total_freight_amount, gross_order_amount)
 - view_monthly_kpis_mom (sales_month, total_orders, product_revenue, freight_revenue, gross_revenue, aov, mom_revenue_growth_pct)
-- view_category_contribution (category, total_orders, units_sold, total_revenue, avg_item_price, avg_review_score, revenue_contribution_pct)
+- view_category_contribution (category_name, category, total_orders, units_sold, total_revenue, avg_item_price, avg_review_score, revenue_contribution_pct)
 - view_state_contribution (customer_state, active_customers, total_orders, total_product_revenue, total_freight_revenue, total_gross_revenue, avg_freight_cost, revenue_contribution_pct)
 - view_delivery_sla_performance (delivery_status, orders_count, percentage, avg_actual_delivery_days, avg_estimated_delivery_days, avg_delay_days)
 - view_seller_performance (seller_id, seller_state, total_orders_fulfilled, units_sold, unique_products_offered, total_sales_revenue, avg_seller_review_score)

@@ -142,3 +142,4 @@ CREATE INDEX idx_sellers_state_city ON sellers(seller_state, seller_city);
 
 CREATE INDEX idx_order_payments_type ON order_payments(payment_type);
 CREATE INDEX idx_order_reviews_score ON order_reviews(review_score);
+CREATE INDEX idx_order_reviews_order_id ON order_reviews(order_id);

@@ -34,13 +34,17 @@ KNOWN_EVENTS: Dict[str, Dict[str, str]] = {
     "2017-11-25": {"name": "Black Friday Weekend 2017", "type": "promotional_peak"},
     "2017-11-26": {"name": "Black Friday Weekend 2017", "type": "promotional_peak"},
     "2017-11-27": {"name": "Cyber Monday 2017", "type": "promotional_peak"},
+    "2017-11-20": {"name": "Black Friday Week 2017", "type": "promotional_peak"},
     "2017-W47": {"name": "Black Friday Week 2017", "type": "promotional_peak"},
+    "2017-11-27": {"name": "Cyber Week 2017", "type": "promotional_peak"},
     "2017-W48": {"name": "Cyber Week 2017", "type": "promotional_peak"},
     "2017-12-24": {"name": "Christmas Eve 2017", "type": "holiday_slowdown"},
     "2017-12-25": {"name": "Christmas Day 2017", "type": "holiday_slowdown"},
     "2018-01-01": {"name": "New Year's Day 2018", "type": "holiday_slowdown"},
+    "2018-05-07": {"name": "Mother's Day Shopping Week 2018", "type": "seasonal_gifting"},
     "2018-05-13": {"name": "Mother's Day Brazil 2018", "type": "seasonal_gifting"},
     "2018-W19": {"name": "Mother's Day Shopping Week 2018", "type": "seasonal_gifting"},
+    "2018-06-11": {"name": "Valentine's Shopping Week 2018", "type": "seasonal_gifting"},
     "2018-06-12": {"name": "Valentine's Day Brazil (Dia dos Namorados)", "type": "seasonal_gifting"},
     "2018-W24": {"name": "Valentine's Shopping Week 2018", "type": "seasonal_gifting"}
 }
@@ -83,25 +87,36 @@ class AnomalyService:
                       AND o.order_purchase_timestamp >= '2017-01-01'
                       AND o.order_purchase_timestamp < '2018-09-01'
                 ),
+                daily_agg AS (
+                    SELECT 
+                        period_date,
+                        SUM(price + freight_value) AS gross_revenue,
+                        COUNT(DISTINCT order_id) AS order_count,
+                        ROUND(SUM(price + freight_value) / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS aov,
+                        ROUND(AVG(on_time) * 100.0, 2) AS on_time_delivery_rate
+                    FROM daily_orders
+                    GROUP BY period_date
+                ),
                 reviews AS (
                     SELECT 
                         DATE_TRUNC('{date_trunc}', o.order_purchase_timestamp)::DATE AS period_date,
-                        r.review_score
+                        ROUND(AVG(r.review_score), 2) AS avg_review_score
                     FROM insightforge.orders o
                     JOIN insightforge.order_reviews r ON o.order_id = r.order_id
                     WHERE o.order_status = 'delivered'
                       AND o.order_purchase_timestamp >= '2017-01-01'
                       AND o.order_purchase_timestamp < '2018-09-01'
+                    GROUP BY 1
                 )
                 SELECT 
                     d.period_date,
-                    SUM(d.price + d.freight_value) AS gross_revenue,
-                    COUNT(DISTINCT d.order_id) AS order_count,
-                    ROUND(SUM(d.price + d.freight_value) / NULLIF(COUNT(DISTINCT d.order_id), 0), 2) AS aov,
-                    ROUND(AVG(d.on_time) * 100.0, 2) AS on_time_delivery_rate,
-                    (SELECT ROUND(AVG(review_score), 2) FROM reviews rev WHERE rev.period_date = d.period_date) AS avg_review_score
-                FROM daily_orders d
-                GROUP BY d.period_date
+                    d.gross_revenue,
+                    d.order_count,
+                    d.aov,
+                    d.on_time_delivery_rate,
+                    rev.avg_review_score
+                FROM daily_agg d
+                LEFT JOIN reviews rev ON d.period_date = rev.period_date
                 ORDER BY d.period_date ASC;
             """)
             with readonly_engine.connect() as conn:

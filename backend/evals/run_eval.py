@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.services.ai_service import AIService
+from backend.app.services.ai_analytics_router import AIAnalyticsRouter
 from backend.app.services.grounding import (
     extract_numbers_from_text,
     verify_numeric_grounding
@@ -300,7 +301,7 @@ def run_sql_evaluations() -> bool:
     valid_count = 0
     exec_count = 0
     accuracy_count = 0
-    sample_queries = []
+    all_case_details = []
 
     print(f"{'ID':<7} | {'SQL Valid':<10} | {'Exec OK':<10} | {'Expected':<12} | {'Actual':<12} | {'Result'}")
     print("-" * 75)
@@ -379,12 +380,23 @@ def run_sql_evaluations() -> bool:
                 match = True
                 accuracy_count += 1
 
-        if len(sample_queries) < 3:
-            sample_queries.append((qid, qtext, gen_sql, "VALID" if sql_valid else "DENIED", rejection_reason, exec_result))
+        case_detail = {
+            "id": qid,
+            "question": qtext,
+            "generated_sql": gen_sql,
+            "validator_verdict": "VALID" if sql_valid else "DENIED",
+            "rejection_reason": rejection_reason,
+            "execution_status": exec_result,
+            "returned_val": actual_val,
+            "reference_val": expected_val,
+            "match": match
+        }
+        all_case_details.append(case_detail)
 
         exp_str = f"{expected_val:,.2f}" if expected_val is not None else "N/A"
         act_str = f"{actual_val:,.2f}" if actual_val is not None else "N/A"
-        print(f"{qid:<7} | {'YES' if sql_valid else 'NO':<10} | {'YES' if executed else 'NO':<10} | {exp_str:<12} | {act_str:<12} | {'PASS' if match else ('OK' if executed else 'FAIL')}", flush=True)
+        verdict_str = "PASS" if match else ("OK" if executed else "FAIL")
+        print(f"[{qid}] Q: {qtext}\n  SQL: {gen_sql}\n  Verdict: {case_detail['validator_verdict']} (Reason: {rejection_reason}) | Exec: {exec_result} | Exp: {exp_str} | Act: {act_str} | Result: {verdict_str}\n", flush=True)
 
     n_total = len(sql_questions)
     validity_rate = (valid_count / n_total) * 100.0
@@ -398,16 +410,12 @@ def run_sql_evaluations() -> bool:
     print(f"Result Accuracy (Ground Truth):  {accuracy_count}/{n_total} ({acc_rate:.1f}%)")
     print("=" * 86)
 
-    print("\nSAMPLE GENERATED QUERIES:")
-    for sq in sample_queries:
-        print(f"\n--- Question [{sq[0]}]: {sq[1]} ---")
-        print(f"Generated SQL: {sq[2]}")
-        print(f"Validator Verdict: {sq[3]} (Reason: {sq[4]}) | Execution: {sq[5]}")
-
     return validity_rate >= 80.0
 
 
 def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
+    if live and "USE_FIXTURES" in os.environ:
+        del os.environ["USE_FIXTURES"]
     all_questions = load_golden_questions()
     questions = [q for q in all_questions if not q.get("id", "").startswith("sql_")]
     mode_upper = mode.upper()
