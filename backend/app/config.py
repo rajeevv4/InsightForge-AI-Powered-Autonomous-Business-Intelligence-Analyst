@@ -39,6 +39,9 @@ class Settings:
     MAX_DATASETS_PER_OWNER: int = int(os.getenv("MAX_DATASETS_PER_OWNER", "3"))
     DATASET_EXPIRY_HOURS: int = int(os.getenv("DATASET_EXPIRY_HOURS", "24"))
     MAX_TOTAL_DB_MB: int = int(os.getenv("MAX_TOTAL_DB_MB", "450"))
+    # XLSX-specific safety limits
+    XLSX_MAX_SHEETS: int = int(os.getenv("XLSX_MAX_SHEETS", "20"))
+    XLSX_MAX_UNCOMPRESSED_MB: int = int(os.getenv("XLSX_MAX_UNCOMPRESSED_MB", "500"))
 
 
 settings = Settings()

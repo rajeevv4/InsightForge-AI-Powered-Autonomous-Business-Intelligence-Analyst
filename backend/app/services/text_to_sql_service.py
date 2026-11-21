@@ -126,7 +126,9 @@ class TextToSQLService:
             "2. FAN-OUT JOIN RULE: NEVER join order_reviews or order_payments directly to order_items when summing revenue. Instead, use view_order_level_summary or compute sums in a CTE before joining.",
             "3. Currency is Brazilian Real (BRL, symbol R$).",
             "4. Always alias aggregated columns cleanly (e.g. total_revenue, order_count, avg_order_value).",
-            "5. The query must be exactly ONE standalone PostgreSQL SELECT statement. No DDL, no DML, no cross joins."
+            "5. The query must be exactly ONE standalone PostgreSQL SELECT statement. No DDL, no DML, no cross joins.",
+            "6. AGGREGATED COUNT FILTERING RULE: When counting entities that meet an aggregate condition (e.g. 'How many orders had total payment > 1000' or 'How many customers placed > 5 orders'), NEVER use SELECT COUNT(DISTINCT id) ... GROUP BY id HAVING SUM(...) > X. That groups by id and returns 1 for each row! Always write a subquery or CTE: SELECT COUNT(*) FROM (SELECT o.order_id FROM ... GROUP BY o.order_id HAVING SUM(...) > X) AS sub;",
+            "7. FREIGHT CALCULATION RULE: When asked for 'average freight value' or 'average freight cost' across orders in a state/region, calculate AVG(oi.freight_value) from order_items with orders and customers (or view_state_contribution.avg_freight_cost)."
         ]
 
         metrics_file = semantic_dir / "metrics.yaml"

@@ -5,6 +5,10 @@ InsightForge — AI Feature Evaluation Harness
 Evaluates natural language business questions from `golden_questions.yaml`
 against expected intent classifications and canonical numeric grounding targets.
 Supports --mode heuristic (offline rule-based) and --mode gemini (live Google Gemini API).
+
+Environment variables:
+  GEMINI_API_KEY        Default Gemini key (also used for evals if GEMINI_API_KEY_EVAL is unset)
+  GEMINI_API_KEY_EVAL   Optional separate Gemini key for eval runs (avoids sharing quota)
 """
 
 import sys
@@ -484,11 +488,16 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
             live_anomaly_count = None
 
     client = None
+    gemini_quota_hit = False  # tracks if quota was exhausted mid-run
     if mode == "gemini":
+        # Support a separate eval key to avoid sharing quota with the live API key
+        eval_key = os.environ.get("GEMINI_API_KEY_EVAL") or os.environ.get("GEMINI_API_KEY", "")
+        if eval_key:
+            os.environ["GEMINI_API_KEY"] = eval_key  # patch so AIService picks it up
         client = AIService._get_genai_client()
         if not client:
             print("❌ ERROR: Gemini mode requested but GEMINI_API_KEY is not configured or google-genai is missing.")
-            print("Please set GEMINI_API_KEY in your environment or .env file.")
+            print("Please set GEMINI_API_KEY (or GEMINI_API_KEY_EVAL) in your environment or .env file.")
             return False
 
     results = []
@@ -521,11 +530,34 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
         language_stats[qlang]["total"] += 1
 
         # 1. Intent Classification
-        if mode == "gemini" and client:
+        if mode == "gemini" and client and not gemini_quota_hit:
             try:
                 classification = AIService.classify_intent_gemini(client, qtext)
             except Exception as e:
-                classification = {"intent": "unknown", "confidence": 0.0, "reason": str(e)}
+                err_str = str(e)
+                if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                    gemini_quota_hit = True
+                    print(f"  [GEMINI QUOTA] {qid}: NOT RUN (AI quota exhausted — remaining cases will show NOT_RUN)")
+                    # Mark as skipped: do not count in numerator or denominator
+                    results.append({
+                        "id": qid, "prefix": prefix,
+                        "question": qtext[:42] + ("..." if len(qtext) > 42 else ""),
+                        "expected_intent": expected_intent, "actual_intent": "NOT_RUN_QUOTA",
+                        "intent_match": None, "expected_val": expected_val, "num_match": None
+                    })
+                    continue
+                # Other Gemini errors: fall back to heuristic but flag it
+                print(f"  [GEMINI ERROR] {qid}: {err_str[:80]} — falling back to heuristic")
+                classification = AIService.classify_intent_heuristic(qtext)
+        elif mode == "gemini" and gemini_quota_hit:
+            # Quota already exhausted: skip this case entirely
+            results.append({
+                "id": qid, "prefix": prefix,
+                "question": qtext[:42] + ("..." if len(qtext) > 42 else ""),
+                "expected_intent": expected_intent, "actual_intent": "NOT_RUN_QUOTA",
+                "intent_match": None, "expected_val": expected_val, "num_match": None
+            })
+            continue
         else:
             classification = AIService.classify_intent_heuristic(qtext)
 
@@ -570,22 +602,38 @@ def run_evaluations(mode: str = "heuristic", live: bool = False, questions_path:
                         if qid in ("del_02", "ml_hi_07"):
                             target_val = float(ev_data.get("avg_actual_delivery_days", expected_val))
 
-                if mode == "gemini" and client:
+                quota_skipped_numeric = False
+                if mode == "gemini" and client and not gemini_quota_hit:
                     try:
                         answer = AIService.synthesize_explanation_gemini(client, qtext, evidence, language=qlang)
-                    except Exception:
-                        answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
+                    except Exception as e:
+                        err_str = str(e)
+                        if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str:
+                            gemini_quota_hit = True
+                            quota_skipped_numeric = True
+                            print(f"  [GEMINI QUOTA] {qid} (numeric): NOT RUN (AI quota exhausted)")
+                            num_match = None  # excluded from denominator
+                            numeric_total -= 1  # undo increment above
+                            category_stats[prefix]["num_total"] -= 1
+                            language_stats[qlang]["num_total"] -= 1
+                        else:
+                            print(f"  [GEMINI ERROR] {qid} (numeric): {err_str[:80]} — falling back to heuristic")
+                            answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
                 else:
                     answer = AIService.synthesize_explanation_heuristic(qtext, evidence, language=qlang)
 
-                num_match = check_numeric_match(answer, target_val)
-                grounded = verify_numeric_grounding(answer, ev_data)
-                if num_match and grounded:
-                    numeric_correct += 1
-                    category_stats[prefix]["num_ok"] += 1
-                    language_stats[qlang]["num_ok"] += 1
+                if quota_skipped_numeric:
+                    # Quota-skipped: leave num_match as None (not counted)
+                    pass
                 else:
-                    num_match = False
+                    num_match = check_numeric_match(answer, target_val)
+                    grounded = verify_numeric_grounding(answer, ev_data)
+                    if num_match and grounded:
+                        numeric_correct += 1
+                        category_stats[prefix]["num_ok"] += 1
+                        language_stats[qlang]["num_ok"] += 1
+                    else:
+                        num_match = False
             else:
                 num_match = False
 

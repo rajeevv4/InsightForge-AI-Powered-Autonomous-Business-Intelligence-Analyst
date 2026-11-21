@@ -220,6 +220,15 @@ class DatasetFileParser:
                             "ZIP archive does not contain standard Excel workbook parts.",
                             status_code=400
                         )
+                    # Decompression bomb protection: check total uncompressed size
+                    total_uncompressed = sum(info.file_size for info in zf.infolist())
+                    max_uncompressed = settings.XLSX_MAX_UNCOMPRESSED_MB * 1024 * 1024
+                    if total_uncompressed > max_uncompressed:
+                        raise FileValidationError(
+                            f"Excel file decompresses to {total_uncompressed / (1024 * 1024):.0f} MB, "
+                            f"exceeding the {settings.XLSX_MAX_UNCOMPRESSED_MB} MB safety limit.",
+                            status_code=400
+                        )
             except zipfile.BadZipFile:
                 raise FileValidationError("Corrupted or invalid Excel .xlsx archive.", status_code=400)
             return "xlsx"
@@ -260,7 +269,15 @@ class DatasetFileParser:
                 wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
                 sheet_names = wb.sheetnames
                 if not sheet_names:
+                    wb.close()
                     raise FileValidationError("Excel workbook contains no sheets.", status_code=400)
+                # Sheet count guard: too many sheets = slow processing / abuse vector
+                if len(sheet_names) > settings.XLSX_MAX_SHEETS:
+                    wb.close()
+                    raise FileValidationError(
+                        f"Excel file has {len(sheet_names)} sheets; maximum allowed is {settings.XLSX_MAX_SHEETS}.",
+                        status_code=400
+                    )
                 ws = wb[sheet_names[0]]
 
                 rows_iter = ws.iter_rows(values_only=True)
@@ -330,6 +347,19 @@ class DatasetFileParser:
         raw_cols = list(df.columns)
         safe_cols, mapping = sanitize_column_list(raw_cols)
         df.columns = safe_cols
+
+        # Formula injection neutralization: prefix cells starting with = + - @ with a tab
+        # so they cannot be interpreted as spreadsheet formulas if re-exported.
+        # We store the prefixed string in the database (TEXT column); the prefix is harmless.
+        _FORMULA_PREFIX_CHARS = ("=", "+", "-", "@")
+        for col in df.columns:
+            # Apply to all string/object dtype columns
+            if pd.api.types.is_string_dtype(df[col]) or df[col].dtype.kind in ("O", "S", "U"):
+                df[col] = df[col].apply(
+                    lambda v: ("\t" + v)
+                    if isinstance(v, str) and v and v[0] in _FORMULA_PREFIX_CHARS
+                    else v
+                )
 
         # Detect warnings (e.g. ambiguous date formats)
         column_warnings = []

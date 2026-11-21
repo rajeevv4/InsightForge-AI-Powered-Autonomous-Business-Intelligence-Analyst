@@ -699,6 +699,24 @@ class DatasetService:
         schema_name = ds_row.schema_name
         limit = max(1, min(limit, 50))  # Cap at 50
 
+        # Validate table_name against the dataset's registered tables (prevents cross-dataset access).
+        # The demo dataset (insightforge schema) skips this check; its tables are fixed by views.sql.
+        if not is_demo:
+            with engine.connect() as conn:
+                allowed_rows = conn.execute(
+                    text(
+                        "SELECT safe_name FROM insightforge.dataset_tables "
+                        "WHERE dataset_id = (SELECT id FROM insightforge.datasets WHERE schema_name = :s)"
+                    ),
+                    {"s": schema_name}
+                ).fetchall()
+            allowed_names = {r[0] for r in allowed_rows}
+            if table_name not in allowed_names:
+                raise FileValidationError(
+                    f"Table '{table_name}' not found in this dataset.",
+                    status_code=404
+                )
+
         # Execute preview query via readonly_engine with quoted identifiers
         raw_ro_conn = readonly_engine.raw_connection()
         try:
