@@ -24,12 +24,19 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_SCHEMA = os.getenv("DB_SCHEMA", "insightforge")
 
 
-def get_db_engine():
+def _build_db_url():
     if DB_PASSWORD:
-        db_url = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    else:
-        db_url = f"postgresql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    return create_engine(db_url, echo=False)
+        return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    return f"postgresql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
+
+# Module-level engine with connection pooling
+_engine = create_engine(_build_db_url(), echo=False, pool_size=5, max_overflow=10, pool_pre_ping=True)
+
+
+def get_db_engine():
+    """Return the module-level pooled engine."""
+    return _engine
 
 
 def run_data_quality_checks():

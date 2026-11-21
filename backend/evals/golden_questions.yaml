@@ -1,0 +1,327 @@
+# InsightForge Evaluation Suite - Golden Questions Dataset
+# 55 Evaluation questions:
+# - 40 Domain-specific across 8 core intents (category, state, seller, delivery, payment, trend, KPIs, data quality)
+# - 10 Out-of-scope questions (should resolve to unknown / confidence < 0.60)
+# - 5 Ambiguous queries
+
+questions:
+  # ----------------------------------------------------------------------------
+  # Category Analysis (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: cat_01
+    question: "Which product category generated the highest revenue?"
+    expected_intent: "category_analysis"
+    expected_value: 1258819.00
+    description: "Top revenue category check (cama_mesa_banho / bed_bath_table or health_beauty)"
+
+  - id: cat_02
+    question: "What are our top product categories by sales and revenue?"
+    expected_intent: "category_analysis"
+    description: "Category sales breakdown request"
+
+  - id: cat_03
+    question: "What is the total product category revenue contribution?"
+    expected_intent: "category_analysis"
+    expected_value: 1258819.00
+    description: "Top category canonical revenue"
+
+  - id: cat_04
+    question: "Which category has the lowest sales volume in the marketplace?"
+    expected_intent: "category_analysis"
+    description: "Bottom category inquiry"
+
+  - id: cat_05
+    question: "Show category revenue breakdown and percentage share"
+    expected_intent: "category_analysis"
+    description: "Category share distribution"
+
+  # ----------------------------------------------------------------------------
+  # State / Regional Analysis (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: st_01
+    question: "Which Brazilian state generated the most revenue?"
+    expected_intent: "state_analysis"
+    expected_value: 5041040.67
+    description: "Top state (Sao Paulo SP) total revenue"
+
+  - id: st_02
+    question: "Show me customer sales distribution across Brazilian states"
+    expected_intent: "state_analysis"
+    description: "Regional distribution overview"
+
+  - id: st_03
+    question: "What percentage of total revenue originates from SP state?"
+    expected_intent: "state_analysis"
+    expected_value: 38.13
+    description: "SP revenue contribution percentage"
+
+  - id: st_04
+    question: "How do customer purchases compare between RJ and MG states?"
+    expected_intent: "state_analysis"
+    description: "State-to-state regional comparison"
+
+  - id: st_05
+    question: "Show regional revenue and delivered order counts by state"
+    expected_intent: "state_analysis"
+    description: "State level volume breakdown"
+
+  # ----------------------------------------------------------------------------
+  # Seller Performance Analysis (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: sel_01
+    question: "Who is our top performing seller by gross revenue?"
+    expected_intent: "seller_analysis"
+    expected_value: 229472.63
+    description: "Top marketplace seller gross revenue"
+
+  - id: sel_02
+    question: "Which merchant sold the highest number of units in the marketplace?"
+    expected_intent: "seller_analysis"
+    description: "Seller unit volume"
+
+  - id: sel_03
+    question: "Show me the top 10 sellers and their review scores"
+    expected_intent: "seller_analysis"
+    description: "Seller leaderboard and customer ratings"
+
+  - id: sel_04
+    question: "What is the average review score for top performing sellers?"
+    expected_intent: "seller_analysis"
+    description: "Merchant CSAT performance"
+
+  - id: sel_05
+    question: "Rank marketplace merchants and vendors by sales volume"
+    expected_intent: "seller_analysis"
+    description: "Merchant ranking query"
+
+  # ----------------------------------------------------------------------------
+  # Delivery SLA & Logistics (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: del_01
+    question: "What is our on-time delivery rate percentage?"
+    expected_intent: "delivery_analysis"
+    expected_value: 91.90
+    description: "On-time delivery SLA compliance"
+
+  - id: del_02
+    question: "What is the average delivery duration in days from order to customer?"
+    expected_intent: "delivery_analysis"
+    expected_value: 12.50
+    description: "Average days to deliver orders"
+
+  - id: del_03
+    question: "How many orders suffered shipping delays past estimated delivery date?"
+    expected_intent: "delivery_analysis"
+    description: "Delayed order count"
+
+  - id: del_04
+    question: "How is our logistics delivery SLA performance holding up?"
+    expected_intent: "delivery_analysis"
+    description: "Logistics health inquiry"
+
+  - id: del_05
+    question: "What is the average freight transit time for delivered orders?"
+    expected_intent: "delivery_analysis"
+    description: "Transit time metrics"
+
+  # ----------------------------------------------------------------------------
+  # Payment Method Analysis (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: pay_01
+    question: "What is the most popular payment method among customers?"
+    expected_intent: "payment_analysis"
+    expected_value: 12542084.19
+    description: "Credit card payment gross value"
+
+  - id: pay_02
+    question: "How much revenue is paid via credit card versus boleto?"
+    expected_intent: "payment_analysis"
+    description: "Credit card vs bank slip payment comparison"
+
+  - id: pay_03
+    question: "Show payment method distribution breakdown across all orders"
+    expected_intent: "payment_analysis"
+    description: "Payment channel breakdown"
+
+  - id: pay_04
+    question: "What is the percentage of voucher and debit card payments?"
+    expected_intent: "payment_analysis"
+    description: "Alternative payment method shares"
+
+  - id: pay_05
+    question: "What is the average installment count for credit card purchases?"
+    expected_intent: "payment_analysis"
+    description: "Credit installment behavior"
+
+  # ----------------------------------------------------------------------------
+  # Revenue Trends & MoM Growth (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: trd_01
+    question: "What is the monthly revenue trend over time?"
+    expected_intent: "revenue_trend"
+    expected_value: 1160785.48
+    description: "Historical monthly sales trend"
+
+  - id: trd_02
+    question: "Show month over month revenue growth rates"
+    expected_intent: "revenue_trend"
+    description: "MoM growth progression"
+
+  - id: trd_03
+    question: "Which month recorded the peak revenue in 2017?"
+    expected_intent: "revenue_trend"
+    description: "Black Friday 2017-11 sales spike"
+
+  - id: trd_04
+    question: "How did monthly order volumes trend between 2017 and 2018?"
+    expected_intent: "revenue_trend"
+    description: "Multi-year volume trajectory"
+
+  - id: trd_05
+    question: "Show seasonal monthly sales pattern and growth trajectory"
+    expected_intent: "revenue_trend"
+    description: "Seasonality and trend analysis"
+
+  # ----------------------------------------------------------------------------
+  # Executive KPIs & Summary (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: kpi_01
+    question: "What is our total gross revenue?"
+    expected_intent: "kpi_summary"
+    expected_value: 15419773.75
+    description: "Total gross revenue (Product + Freight)"
+
+  - id: kpi_02
+    question: "What is our total product revenue without freight?"
+    expected_intent: "kpi_summary"
+    expected_value: 13221498.11
+    description: "Canonical total product revenue"
+
+  - id: kpi_03
+    question: "How many delivered orders were fulfilled in total?"
+    expected_intent: "kpi_summary"
+    expected_value: 96478
+    description: "Canonical total delivered orders count"
+
+  - id: kpi_04
+    question: "What is our average order value (AOV) across delivered orders?"
+    expected_intent: "kpi_summary"
+    expected_value: 159.83
+    description: "Canonical average order value (AOV)"
+
+  - id: kpi_05
+    question: "What is our overall customer satisfaction CSAT score?"
+    expected_intent: "kpi_summary"
+    expected_value: 4.16
+    description: "Canonical CSAT average review rating"
+
+  # ----------------------------------------------------------------------------
+  # Data Quality & Auditing (5 questions)
+  # ----------------------------------------------------------------------------
+  - id: dq_01
+    question: "Are there any data quality issues in our database?"
+    expected_intent: "data_quality"
+    description: "General data quality audit check"
+
+  - id: dq_02
+    question: "Check primary key uniqueness and duplicate records across tables"
+    expected_intent: "data_quality"
+    description: "PK uniqueness audit"
+
+  - id: dq_03
+    question: "Are there any orphan records or foreign key integrity violations?"
+    expected_intent: "data_quality"
+    description: "FK referential integrity audit"
+
+  - id: dq_04
+    question: "Check domain bounds for negative prices, freight, or invalid review scores"
+    expected_intent: "data_quality"
+    description: "Domain bounds validation"
+
+  - id: dq_05
+    question: "What is our overall database health audit status?"
+    expected_intent: "data_quality"
+    description: "Audit status summary"
+
+  # ----------------------------------------------------------------------------
+  # Out-Of-Scope Questions (10 questions)
+  # Expected intent: 'unknown' (or confidence < 0.60)
+  # ----------------------------------------------------------------------------
+  - id: oos_01
+    question: "What is the weather in Rio de Janeiro today?"
+    expected_intent: "unknown"
+    description: "Weather inquiry"
+
+  - id: oos_02
+    question: "Can you write a Python quicksort algorithm?"
+    expected_intent: "unknown"
+    description: "Coding assistance"
+
+  - id: oos_03
+    question: "Who won the FIFA World Cup in 2018?"
+    expected_intent: "unknown"
+    description: "Sports trivia"
+
+  - id: oos_04
+    question: "What is the capital city of France?"
+    expected_intent: "unknown"
+    description: "Geography query"
+
+  - id: oos_05
+    question: "Explain Albert Einstein's theory of general relativity."
+    expected_intent: "unknown"
+    description: "Science explanation"
+
+  - id: oos_06
+    question: "Can you draft an email to our marketing team about the conference?"
+    expected_intent: "unknown"
+    description: "Email drafting request"
+
+  - id: oos_07
+    question: "How do I make chocolate chip cookies from scratch?"
+    expected_intent: "unknown"
+    description: "Cooking recipe"
+
+  - id: oos_08
+    question: "Can you recommend good sci-fi movies on Netflix?"
+    expected_intent: "unknown"
+    description: "Movie recommendations"
+
+  - id: oos_09
+    question: "Write a JavaScript snippet to reverse an array in place."
+    expected_intent: "unknown"
+    description: "Programming request"
+
+  - id: oos_10
+    question: "What is the current stock price of Apple on NASDAQ?"
+    expected_intent: "unknown"
+    description: "External stock market query"
+
+  # ----------------------------------------------------------------------------
+  # Ambiguous Queries (5 questions)
+  # Can resolve to reasonable default intent or unknown
+  # ----------------------------------------------------------------------------
+  - id: amb_01
+    question: "Tell me about the business performance."
+    expected_intent: "kpi_summary"
+    description: "Broad business query (routes to executive KPIs)"
+
+  - id: amb_02
+    question: "How are things looking right now?"
+    expected_intent: "unknown"
+    description: "Completely vague question"
+
+  - id: amb_03
+    question: "Can you show me the numbers?"
+    expected_intent: "unknown"
+    description: "Unspecified metrics request"
+
+  - id: amb_04
+    question: "Give me an overview of everything."
+    expected_intent: "kpi_summary"
+    description: "Overview request"
+
+  - id: amb_05
+    question: "What is happening with our growth?"
+    expected_intent: "revenue_trend"
+    description: "Growth query (routes to revenue trends)"

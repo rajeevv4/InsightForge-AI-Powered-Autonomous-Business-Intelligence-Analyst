@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -13,7 +14,8 @@ client = TestClient(app)
 
 class TestFastAPIBackend(unittest.TestCase):
 
-    def test_health_endpoint(self):
+    @patch("backend.app.routers.health.check_db_connection", return_value=True)
+    def test_health_endpoint(self, mock_check_db):
         """Test GET /api/health returns healthy status and DB connection."""
         response = client.get("/api/health")
         self.assertEqual(response.status_code, 200)

@@ -86,7 +86,7 @@ export const OverviewPage: React.FC = () => {
   }, [loadOverviewData, outletContext?.refreshTrigger]);
 
   const fmtCurr = (val: number | undefined) =>
-    val !== undefined ? `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
+    val !== undefined ? `R$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
   const fmtNum = (val: number | undefined) => (val !== undefined ? val.toLocaleString() : '—');
 
   return (

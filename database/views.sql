@@ -103,6 +103,13 @@ WITH totals AS (
     FROM order_items oi
     JOIN orders o ON oi.order_id = o.order_id
     WHERE o.order_status = 'delivered'
+),
+order_avg_review AS (
+    SELECT r.order_id, AVG(r.review_score) AS avg_score
+    FROM order_reviews r
+    JOIN orders o ON r.order_id = o.order_id
+    WHERE o.order_status = 'delivered'
+    GROUP BY r.order_id
 )
 SELECT 
     COALESCE(p.product_category_name_english, 'Uncategorized') AS category_name,
@@ -110,12 +117,12 @@ SELECT
     COUNT(oi.order_item_id) AS units_sold,
     SUM(oi.price) AS total_revenue,
     ROUND(AVG(oi.price), 2) AS avg_item_price,
-    ROUND(AVG(r.review_score), 2) AS avg_review_score,
+    ROUND(AVG(oar.avg_score), 2) AS avg_review_score,
     ROUND((SUM(oi.price) / t.overall_company_revenue) * 100, 2) AS revenue_contribution_pct
 FROM order_items oi
 JOIN products p ON oi.product_id = p.product_id
 JOIN orders o ON oi.order_id = o.order_id
-LEFT JOIN order_reviews r ON oi.order_id = r.order_id
+LEFT JOIN order_avg_review oar ON oi.order_id = oar.order_id
 CROSS JOIN totals t
 WHERE o.order_status = 'delivered'
 GROUP BY COALESCE(p.product_category_name_english, 'Uncategorized'), t.overall_company_revenue
@@ -202,6 +209,13 @@ WHERE order_status = 'delivered';
 -- 6. Merchant / Seller Performance Summary
 -- ----------------------------------------------------------------------------
 CREATE VIEW view_seller_performance AS
+WITH order_avg_review AS (
+    SELECT r.order_id, AVG(r.review_score) AS avg_score
+    FROM order_reviews r
+    JOIN orders o ON r.order_id = o.order_id
+    WHERE o.order_status = 'delivered'
+    GROUP BY r.order_id
+)
 SELECT 
     s.seller_id,
     s.seller_city,
@@ -210,11 +224,11 @@ SELECT
     COUNT(oi.order_item_id) AS units_sold,
     COUNT(DISTINCT oi.product_id) AS unique_products_offered,
     SUM(oi.price) AS total_sales_revenue,
-    ROUND(AVG(r.review_score), 2) AS avg_seller_review_score
+    ROUND(AVG(oar.avg_score), 2) AS avg_seller_review_score
 FROM sellers s
 JOIN order_items oi ON s.seller_id = oi.seller_id
 JOIN orders o ON oi.order_id = o.order_id
-LEFT JOIN order_reviews r ON oi.order_id = r.order_id
+LEFT JOIN order_avg_review oar ON oi.order_id = oar.order_id
 WHERE o.order_status = 'delivered'
 GROUP BY s.seller_id, s.seller_city, s.seller_state
 ORDER BY total_sales_revenue DESC;

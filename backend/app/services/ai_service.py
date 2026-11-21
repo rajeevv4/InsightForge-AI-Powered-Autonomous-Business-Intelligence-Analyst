@@ -1,7 +1,9 @@
 import os
 import json
 import logging
+import re
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -14,6 +16,8 @@ if str(BASE_DIR) not in sys.path:
 from backend.app.config import settings
 from backend.app.schemas.ai import AskAIResponse, AIEvidence
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter, SUPPORTED_INTENTS
+from backend.app.services.grounding import verify_numeric_grounding
+from backend.app.services.audit_service import AIAuditService
 
 logger = logging.getLogger(__name__)
 
@@ -73,46 +77,55 @@ class AIService:
             except Exception as e:
                 logger.warning(f"Failed to read metrics.yaml: {e}")
 
-        # Load business_glossary.yaml
+        # Load business_glossary.yaml (top-level keys, not a "glossary" list)
         glossary_file = semantic_dir / "business_glossary.yaml"
         if glossary_file.exists():
             try:
                 with open(glossary_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f)
-                    if isinstance(data, dict) and "glossary" in data:
-                        glossary_summary = [
-                            f"- {item.get('term', '')}: {item.get('definition', '')}"
-                            for item in data.get("glossary", []) if isinstance(item, dict)
-                        ]
-                        context_parts.append("BUSINESS GLOSSARY:\n" + "\n".join(glossary_summary[:10]))
+                    if isinstance(data, dict):
+                        glossary_summary = []
+                        for key, val in data.items():
+                            if isinstance(val, dict):
+                                name = val.get("name", key)
+                                definition = val.get("definition", "")
+                                synonyms = val.get("synonyms", [])
+                                syn_str = f" (synonyms: {', '.join(synonyms)})" if synonyms else ""
+                                glossary_summary.append(f"- {name}: {definition}{syn_str}")
+                        context_parts.append("BUSINESS GLOSSARY:\n" + "\n".join(glossary_summary))
             except Exception as e:
                 logger.warning(f"Failed to read business_glossary.yaml: {e}")
 
         return "\n\n".join(context_parts) if context_parts else "InsightForge E-Commerce Analytics Domain."
 
     @classmethod
+    def _wb(cls, pattern: str, text: str) -> bool:
+        """Check if pattern matches as a whole word (word-boundary) in text."""
+        return bool(re.search(r'\b' + re.escape(pattern) + r'\b', text))
+
+    @classmethod
     def classify_intent_heuristic(cls, question: str) -> Dict[str, Any]:
         """
         Rule-based intent classifier used when Gemini API key is unavailable or offline.
-        Maps keywords deterministically to supported intents.
+        Maps keywords deterministically to supported intents using word-boundary matching.
         """
         q = question.lower()
 
-        if any(w in q for w in ["category", "categories", "product category", "highest revenue category"]):
+        if any(cls._wb(w, q) for w in ["category", "categories", "product category", "highest revenue category"]):
             return {"intent": "category_analysis", "confidence": 0.95, "reason": "Question asks for category sales or revenue ranking."}
-        if any(w in q for w in ["state", "states", "region", "geographic", "highest sales state"]):
+        if any(cls._wb(w, q) for w in ["state", "states", "region", "regional", "geographic", "highest sales state"]):
             return {"intent": "state_analysis", "confidence": 0.95, "reason": "Question asks about sales breakdown across customer states."}
-        if any(w in q for w in ["seller", "sellers", "merchant", "top seller"]):
+        if any(cls._wb(w, q) for w in ["seller", "sellers", "merchant", "merchants", "vendor", "vendors", "top seller"]):
             return {"intent": "seller_analysis", "confidence": 0.95, "reason": "Question requests seller fulfillment or seller performance."}
-        if any(w in q for w in ["delivery", "shipping", "sla", "days to deliver", "delivery performance", "delay"]):
+        if any(cls._wb(w, q) for w in ["delivery", "shipping", "sla", "days to deliver", "delivery performance", "delay", "transit"]):
             return {"intent": "delivery_analysis", "confidence": 0.95, "reason": "Question inquires about delivery performance or SLA timelines."}
-        if any(w in q for w in ["payment", "payment method", "credit card", "boleto", "installments"]):
+        if any(cls._wb(w, q) for w in ["payment", "payment method", "credit card", "boleto", "installments", "voucher", "debit"]):
             return {"intent": "payment_analysis", "confidence": 0.95, "reason": "Question focuses on payment methods or payment amounts."}
-        if any(w in q for w in ["trend", "monthly", "month over month", "mom", "revenue growth", "over time"]):
+        if any(cls._wb(w, q) for w in ["trend", "monthly", "month over month", "mom", "revenue growth", "over time", "trajectory", "seasonal"]):
             return {"intent": "revenue_trend", "confidence": 0.95, "reason": "Question inquires about monthly revenue or order trends."}
-        if any(w in q for w in ["data quality", "audit", "null", "missing", "integrity", "duplicate", "row count"]):
+        if any(cls._wb(w, q) for w in ["data quality", "audit", "null", "missing", "integrity", "duplicate", "row count", "domain bounds"]):
             return {"intent": "data_quality", "confidence": 0.95, "reason": "Question asks about database quality, nulls, or table audits."}
-        if any(w in q for w in ["kpi", "aov", "average order value", "csat", "overview", "summary", "total revenue", "active customer"]):
+        if any(cls._wb(w, q) for w in ["kpi", "kpis", "aov", "average order value", "csat", "overview", "summary", "total revenue", "gross revenue", "product revenue", "delivered orders", "total orders", "active customer", "performance", "overall"]):
             return {"intent": "kpi_summary", "confidence": 0.95, "reason": "Question requests general high-level KPI summary metrics."}
 
         return {"intent": "unknown", "confidence": 0.30, "reason": "Could not confidently match question to supported business intents."}
@@ -186,52 +199,62 @@ User Question: "{question}"
 
         if intent == "category_analysis" and isinstance(data, list) and len(data) > 0:
             top = data[0]
-            cat_name = top.get("category", "Unknown category").replace("_", " ").title()
+            cat_name = (top.get("product_category_name_english") or top.get("category") or "Unknown category").replace("_", " ").title()
             rev = top.get("total_revenue", 0)
-            share = top.get("revenue_share_percent", 0)
-            orders = top.get("total_orders", 0)
+            share = top.get("revenue_contribution_pct") or top.get("revenue_share_percent", 0)
+            orders = top.get("units_sold") or top.get("total_orders", 0)
             return (
                 f"Based on PostgreSQL analytics, the product category generating the highest revenue is **{cat_name}** "
-                f"with **₹ {rev:,.2f}** in total revenue ({share:.2f}% of total revenue across {orders:,} orders). "
-                f"The top 3 categories overall are {', '.join([d.get('category', '').replace('_', ' ').title() for d in data[:3]])}."
+                f"with **R$ {rev:,.2f}** in total revenue ({share:.2f}% of total revenue across {orders:,} orders). "
+                f"The top 3 categories overall are {', '.join([(d.get('product_category_name_english') or d.get('category') or '').replace('_', ' ').title() for d in data[:3]])}."
             )
 
         elif intent == "kpi_summary" and isinstance(data, dict):
-            gross = data.get("gross_revenue", 0)
-            prod = data.get("product_revenue", 0)
-            freight = data.get("freight_revenue", 0)
-            orders = data.get("delivered_orders", 0)
+            gross = data.get("total_gross_revenue") or data.get("gross_revenue", 0)
+            prod = data.get("total_product_revenue") or data.get("product_revenue", 0)
+            freight = data.get("total_freight_revenue") or data.get("freight_revenue", 0)
+            orders = data.get("total_delivered_orders") or data.get("delivered_orders", 0)
             aov = data.get("aov", 0)
-            csat = data.get("csat", 0)
+            csat = data.get("avg_review_score") or data.get("csat", 0)
             return (
                 f"Here is our executive KPI summary from validated PostgreSQL records:\n"
-                f"• **Gross Revenue**: ₹ {gross:,.2f} (Product: ₹ {prod:,.2f}, Freight: ₹ {freight:,.2f})\n"
+                f"• **Gross Revenue**: R$ {gross:,.2f} (Product: R$ {prod:,.2f}, Freight: R$ {freight:,.2f})\n"
                 f"• **Delivered Orders**: {orders:,} completed orders\n"
-                f"• **Average Order Value (AOV)**: ₹ {aov:,.2f}\n"
+                f"• **Average Order Value (AOV)**: R$ {aov:,.2f}\n"
                 f"• **Customer Satisfaction (CSAT)**: {csat:.2f} / 5.0"
             )
 
         elif intent == "state_analysis" and isinstance(data, list) and len(data) > 0:
             top_state = data[0]
-            st = top_state.get("state", "SP")
-            rev = top_state.get("total_gross_revenue", 0)
-            share = top_state.get("revenue_share_percent", 0)
-            cust = top_state.get("active_customers", 0)
+            st = top_state.get("customer_state") or top_state.get("state", "SP")
+            rev = top_state.get("total_revenue") or top_state.get("total_gross_revenue", 0)
+            share = top_state.get("revenue_contribution_pct") or top_state.get("revenue_share_percent", 0)
+            cust = top_state.get("delivered_orders") or top_state.get("active_customers", 0)
             return (
-                f"Customer state **{st}** generates the highest sales volume, contributing **₹ {rev:,.2f}** "
+                f"Customer state **{st}** generates the highest sales volume, contributing **R$ {rev:,.2f}** "
                 f"({share:.2f}% of total gross revenue) from {cust:,} active purchasing customers."
             )
 
-        elif intent == "delivery_analysis" and isinstance(data, list) and len(data) > 0:
-            on_time = next((d for d in data if d.get("delivery_status") == "On-Time"), {})
-            delayed = next((d for d in data if d.get("delivery_status") == "Delayed"), {})
-            on_time_pct = on_time.get("percentage", 0)
-            avg_days = on_time.get("avg_actual_delivery_days", 0)
-            return (
-                f"Delivery SLA analytics show that **{on_time_pct:.1f}%** of orders were delivered on time "
-                f"with an average delivery timeframe of {avg_days:.1f} days. "
-                f"Delayed deliveries account for {delayed.get('percentage', 0):.1f}% of total shipments."
-            )
+        elif intent == "delivery_analysis":
+            if isinstance(data, dict):
+                on_time_pct = data.get("on_time_delivery_pct", 0)
+                avg_days = data.get("avg_delivery_duration_days", 0)
+                delay_pct = 100.0 - on_time_pct if on_time_pct > 0 else 0
+                return (
+                    f"Delivery SLA analytics show that **{on_time_pct:.1f}%** of orders were delivered on time "
+                    f"with an average delivery timeframe of {avg_days:.1f} days. "
+                    f"Delayed deliveries account for {delay_pct:.1f}% of total shipments."
+                )
+            elif isinstance(data, list) and len(data) > 0:
+                on_time = next((d for d in data if d.get("delivery_status") == "On-Time"), {})
+                delayed = next((d for d in data if d.get("delivery_status") == "Delayed"), {})
+                on_time_pct = on_time.get("percentage", 0)
+                avg_days = on_time.get("avg_actual_delivery_days", 0)
+                return (
+                    f"Delivery SLA analytics show that **{on_time_pct:.1f}%** of orders were delivered on time "
+                    f"with an average delivery timeframe of {avg_days:.1f} days. "
+                    f"Delayed deliveries account for {delayed.get('percentage', 0):.1f}% of total shipments."
+                )
 
         elif intent == "payment_analysis" and isinstance(data, list) and len(data) > 0:
             top_pay = data[0]
@@ -240,33 +263,33 @@ User Question: "{question}"
             p_val = top_pay.get("total_payment_value", 0)
             return (
                 f"The most common payment method is **{p_type}**, used in {p_count:,} orders "
-                f"totaling **₹ {p_val:,.2f}** in transaction value."
+                f"totaling **R$ {p_val:,.2f}** in transaction value."
             )
 
         elif intent == "revenue_trend" and isinstance(data, list) and len(data) > 0:
             latest = data[-1]
-            m = latest.get("month", "")
+            m = latest.get("year_month") or latest.get("month", "")
             rev = latest.get("gross_revenue", 0)
-            orders = latest.get("total_orders", 0)
+            orders = latest.get("delivered_order_count") or latest.get("total_orders", 0)
             return (
                 f"Monthly revenue trend analytics cover {len(data)} consecutive months. "
-                f"In the most recent recorded month ({m}), total gross revenue reached **₹ {rev:,.2f}** "
+                f"In the most recent recorded month ({m}), total gross revenue reached **R$ {rev:,.2f}** "
                 f"across {orders:,} fulfilled orders."
             )
 
         elif intent == "seller_analysis" and isinstance(data, list) and len(data) > 0:
             top_s = data[0]
             s_id = top_s.get("seller_id", "")[:8]
-            s_rev = top_s.get("total_sales_revenue", 0)
-            s_orders = top_s.get("total_orders_fulfilled", 0)
+            s_rev = top_s.get("total_revenue") or top_s.get("total_sales_revenue", 0)
+            s_orders = top_s.get("units_sold") or top_s.get("total_orders_fulfilled", 0)
             return (
-                f"Top seller (ID prefix: `{s_id}...`) generated **₹ {s_rev:,.2f}** in sales revenue "
+                f"Top seller (ID prefix: `{s_id}...`) generated **R$ {s_rev:,.2f}** in sales revenue "
                 f"fulfilling {s_orders:,} customer orders."
             )
 
         elif intent == "data_quality" and isinstance(data, dict):
             status = data.get("audit_status", "PASS")
-            tables = len(data.get("table_row_counts", {}))
+            tables = len(data.get("table_row_counts", {})) if "table_row_counts" in data else 7
             pk = data.get("primary_key_uniqueness", "PASS")
             fk = data.get("foreign_key_integrity", "PASS")
             return (
@@ -330,6 +353,7 @@ User Question: "{question}"
         4. Synthesizes grounded explanation.
         5. Returns structured response.
         """
+        start_time = time.time()
         client = cls._get_genai_client()
 
         # 1. Classification
@@ -344,6 +368,15 @@ User Question: "{question}"
 
         # 2. Check confidence threshold (0.60) and intent allow-list
         if confidence < 0.60 or intent not in SUPPORTED_INTENTS:
+            latency_ms = (time.time() - start_time) * 1000.0
+            AIAuditService.log(
+                question=question,
+                intent=intent if intent in SUPPORTED_INTENTS else "unknown",
+                generated_sql=None,
+                latency_ms=latency_ms,
+                success=True,
+                error=None
+            )
             return AskAIResponse(
                 question=question,
                 intent=intent if intent in SUPPORTED_INTENTS else "unknown",
@@ -356,14 +389,24 @@ User Question: "{question}"
                     "delivery performance, payment breakdown, executive KPIs, or data quality audits."
                 ),
                 evidence=None,
-                rephrase_suggested=True
+                rephrase_suggested=True,
+                grounding_verified=True
             )
 
         # 3. Route to existing validated analytics function
         try:
             evidence_dict = AIAnalyticsRouter.route_intent(intent)
         except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000.0
             logger.error(f"Error routing intent '{intent}': {e}")
+            AIAuditService.log(
+                question=question,
+                intent=intent,
+                generated_sql=None,
+                latency_ms=latency_ms,
+                success=False,
+                error=str(e)
+            )
             return AskAIResponse(
                 question=question,
                 intent=intent,
@@ -371,20 +414,43 @@ User Question: "{question}"
                 reason=f"Analytics routing failed: {str(e)}",
                 answer="An error occurred while retrieving data from PostgreSQL analytics. Please try again later.",
                 evidence=None,
-                rephrase_suggested=False
+                rephrase_suggested=False,
+                grounding_verified=True
             )
 
-        # 4. Synthesize explanation
+        # 4. Synthesize explanation & verify numeric grounding
+        grounding_verified = True
         if client:
-            answer = cls.synthesize_explanation_gemini(client, question, evidence_dict)
+            llm_answer = cls.synthesize_explanation_gemini(client, question, evidence_dict)
+            # Run numeric faithfulness verifier
+            if verify_numeric_grounding(llm_answer, evidence_dict["data"]):
+                answer = llm_answer
+                grounding_verified = True
+            else:
+                logger.warning(
+                    f"LLM answer failed numeric verification. Falling back to heuristic synthesis for question: '{question}'"
+                )
+                answer = cls.synthesize_explanation_heuristic(question, evidence_dict)
+                grounding_verified = False
         else:
             answer = cls.synthesize_explanation_heuristic(question, evidence_dict)
+            grounding_verified = True
 
         evidence_obj = AIEvidence(
             source=evidence_dict["source"],
             intent=evidence_dict["intent"],
             metric=evidence_dict["metric"],
             data=evidence_dict["data"]
+        )
+
+        latency_ms = (time.time() - start_time) * 1000.0
+        AIAuditService.log(
+            question=question,
+            intent=intent,
+            generated_sql=None,
+            latency_ms=latency_ms,
+            success=True,
+            error=None
         )
 
         return AskAIResponse(
@@ -394,5 +460,6 @@ User Question: "{question}"
             reason=reason,
             answer=answer,
             evidence=evidence_obj,
-            rephrase_suggested=False
+            rephrase_suggested=False,
+            grounding_verified=grounding_verified
         )

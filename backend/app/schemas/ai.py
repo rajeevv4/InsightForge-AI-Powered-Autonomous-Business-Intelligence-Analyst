@@ -37,3 +37,15 @@ class AskAIResponse(BaseModel):
     answer: str = Field(..., description="Concise, evidence-grounded AI explanation")
     evidence: Optional[AIEvidence] = Field(default=None, description="Grounding data evidence from analytics layer")
     rephrase_suggested: bool = Field(default=False, description="True if intent confidence was below threshold")
+    grounding_verified: bool = Field(default=True, description="True if output numbers are grounded in evidence; False if verification failed and fallback was triggered")
+
+
+class AIAuditLogItem(BaseModel):
+    id: Optional[int] = Field(default=None, description="Primary key id of the audit entry")
+    question: str = Field(..., description="User query submitted")
+    intent: Optional[str] = Field(default=None, description="Classified intent or route")
+    generated_sql: Optional[str] = Field(default=None, description="SQL query generated or executed")
+    latency_ms: float = Field(..., description="Total execution time in milliseconds")
+    success: bool = Field(..., description="True if request completed successfully")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+    timestamp: str = Field(..., description="ISO 8601 UTC timestamp")

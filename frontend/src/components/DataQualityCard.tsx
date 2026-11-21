@@ -2,7 +2,7 @@ import React from 'react';
 import { DataQualityResponse } from '../types/api';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorBanner } from './ErrorBanner';
-import { CheckCircle2, ShieldCheck, Database, FileCheck, Layers } from 'lucide-react';
+import { CheckCircle2, XCircle, ShieldCheck, Database, FileCheck, Layers, AlertTriangle } from 'lucide-react';
 
 interface DataQualityCardProps {
   data: DataQualityResponse | null;
@@ -10,6 +10,18 @@ interface DataQualityCardProps {
   error: string | null;
   onRetry?: () => void;
 }
+
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
+  const isPass = status.startsWith('PASS');
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+      isPass ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+    }`}>
+      {isPass ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+      {status}
+    </span>
+  );
+};
 
 export const DataQualityCard: React.FC<DataQualityCardProps> = ({
   data,
@@ -29,8 +41,10 @@ export const DataQualityCard: React.FC<DataQualityCardProps> = ({
         <div>
           <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
             Data Reliability Summary
-            <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">
-              Verified
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border ${
+              isHealthy ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+            }`}>
+              {isHealthy ? 'Verified' : 'Issues Found'}
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -38,50 +52,72 @@ export const DataQualityCard: React.FC<DataQualityCardProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          <span className="font-medium">Data Completeness: High</span>
+        <div className={`flex items-center space-x-2 text-xs px-3 py-1.5 rounded-lg border ${
+          isHealthy
+            ? 'text-slate-600 bg-slate-50 border-slate-200'
+            : 'text-rose-600 bg-rose-50 border-rose-200'
+        }`}>
+          {isHealthy
+            ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            : <AlertTriangle className="w-4 h-4 text-rose-600" />
+          }
+          <span className="font-medium">Audit Status: {data.audit_status}</span>
         </div>
       </div>
 
-      {/* Human Readable Checks */}
+      {/* Computed Check Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Completeness */}
-        <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
-          <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
-            <FileCheck className="w-4 h-4 text-indigo-600" />
-            <span>Data Completeness</span>
-          </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            No critical missing fields detected across core transaction records.
-          </p>
-          <div className="text-[11px] text-emerald-700 font-medium">✓ 100% Core Field Coverage</div>
-        </div>
-
-        {/* Consistency */}
-        <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
-          <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
-            <Layers className="w-4 h-4 text-blue-600" />
-            <span>Data Consistency</span>
-          </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            All key relational joins and foreign key constraints validated.
-          </p>
-          <div className="text-[11px] text-emerald-700 font-medium">✓ Zero Orphan Records</div>
-        </div>
-
-        {/* Integrity */}
+        {/* PK Uniqueness */}
         <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
           <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Data Integrity</span>
+            <span>Primary Key Uniqueness</span>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            Primary key uniqueness verified without duplicate entries.
-          </p>
-          <div className="text-[11px] text-emerald-700 font-medium">✓ No Duplicate Keys</div>
+          <StatusBadge status={data.primary_key_uniqueness} />
+        </div>
+
+        {/* FK Integrity */}
+        <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
+          <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
+            <Layers className="w-4 h-4 text-blue-600" />
+            <span>Foreign Key Integrity</span>
+          </div>
+          <StatusBadge status={data.foreign_key_integrity} />
+        </div>
+
+        {/* Domain Bounds */}
+        <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
+          <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
+            <FileCheck className="w-4 h-4 text-indigo-600" />
+            <span>Domain &amp; Value Range</span>
+          </div>
+          <StatusBadge status={data.domain_bounds_status} />
         </div>
       </div>
+
+      {/* Join Safety */}
+      <div className="p-4 bg-slate-50/80 border border-slate-200/60 rounded-xl space-y-2">
+        <div className="flex items-center space-x-2 text-slate-700 font-semibold text-xs">
+          <Database className="w-4 h-4 text-purple-600" />
+          <span>Join Fan-Out Safety</span>
+        </div>
+        <StatusBadge status={data.join_safety_status} />
+      </div>
+
+      {/* Anomalies */}
+      {data.anomalies_flagged && data.anomalies_flagged.length > 0 && (
+        <div className="p-4 bg-amber-50/80 border border-amber-200/60 rounded-xl space-y-2">
+          <div className="flex items-center space-x-2 text-amber-700 font-semibold text-xs">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <span>Anomalies Flagged ({data.anomalies_flagged.length})</span>
+          </div>
+          <ul className="text-xs text-slate-700 space-y-1 ml-6 list-disc">
+            {data.anomalies_flagged.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Table Row Counts */}
       <div className="pt-2">
@@ -97,6 +133,23 @@ export const DataQualityCard: React.FC<DataQualityCardProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Missing Values */}
+      {data.missing_value_summary && Object.keys(data.missing_value_summary).length > 0 && (
+        <div className="pt-2">
+          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">
+            Missing Value Summary
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            {Object.entries(data.missing_value_summary).map(([field, count]) => (
+              <div key={field} className="p-3 bg-white border border-slate-200/80 rounded-lg flex items-center justify-between">
+                <span className="text-slate-600 font-medium">{field}</span>
+                <span className={`font-bold ${count > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{count.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

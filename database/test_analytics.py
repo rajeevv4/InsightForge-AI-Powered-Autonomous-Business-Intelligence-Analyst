@@ -61,21 +61,29 @@ class TestInsightForgeAnalytics(unittest.TestCase):
         self.assertEqual(actual_aov, 159.83)
 
     def test_category_contribution_sum(self):
-        """Assert sum of category contribution percentages equals ~100%."""
+        """Assert sum of category contribution percentages equals ~100% (tight tolerance)."""
         df_cat = get_category_analytics(top_n=200)  # Get all categories
         total_pct = df_cat['revenue_contribution_pct'].sum()
         
-        # Allow slight floating point rounding tolerance (99.5% to 100.5%)
-        self.assertGreater(total_pct, 99.0)
-        self.assertLess(total_pct, 101.0)
+        # Tight tolerance: 99.9% to 100.1%
+        self.assertGreaterEqual(total_pct, 99.9, f"Category contribution sum too low: {total_pct}")
+        self.assertLessEqual(total_pct, 100.1, f"Category contribution sum too high: {total_pct}")
+
+    def test_category_revenue_sum(self):
+        """Assert sum of all category revenues equals canonical product revenue 13,221,498.11."""
+        df_cat = get_category_analytics(top_n=200)
+        total_cat_rev = df_cat['total_revenue'].sum()
+        self.assertAlmostEqual(float(total_cat_rev), 13221498.11, places=2,
+                               msg=f"Category revenue sum {total_cat_rev} != 13221498.11")
 
     def test_state_contribution_sum(self):
-        """Assert sum of regional state contribution percentages equals ~100%."""
+        """Assert sum of regional state contribution percentages equals ~100% (tight tolerance)."""
         df_state = get_state_analytics()
         total_pct = df_state['state_revenue_contribution_pct'].sum()
         
-        self.assertGreater(total_pct, 99.0)
-        self.assertLess(total_pct, 101.0)
+        # Tight tolerance: 99.9% to 100.1%
+        self.assertGreaterEqual(total_pct, 99.9, f"State contribution sum too low: {total_pct}")
+        self.assertLessEqual(total_pct, 100.1, f"State contribution sum too high: {total_pct}")
 
     def test_no_negative_values(self):
         """Assert no negative revenue, price, or order count exists."""

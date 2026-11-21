@@ -18,7 +18,7 @@ Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 1
 
 - **Developer & Architect**: **Rajeev Karakoti** , **Priyanshu Saklani**, **Prasanna Godiyal**
 - **Project Type**: B.Tech Major Project — Autonomous BI & AI Analytics System
-- **Dataset**: Olist Brazilian E-Commerce Dataset (~100,000 orders, 9 core tables)
+- **Dataset**: Olist Brazilian E-Commerce Dataset (~100,000 orders, 7 core tables)
 - **Repository**: [InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst](https://github.com/rajeevv4/InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst)
 
 ---
@@ -73,7 +73,7 @@ InsightForge/
 │   │   │   └── api.ts                # Axios HTTP client service
 │   │   ├── types/
 │   │   │   └── api.ts                # TypeScript API interfaces
-│   │   └── App.tsx                   # React Router (v6) route definitions
+│   │   └── App.tsx                   # React Router (v7) route definitions
 ├── semantic/                         # Business Glossary & Semantic Layer
 │   ├── business_glossary.yaml        # 19 standardized business terms
 │   ├── metrics.yaml                  # 8 canonical metric formulas & targets
@@ -122,12 +122,18 @@ DB_NAME=insightforge
 DB_USER=postgres
 DB_PASSWORD=your_password
 DB_SCHEMA=insightforge
+DB_RO_USER=insightforge_ro
+DB_RO_PASSWORD=insightforge_ro_pass
 GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash
+RATE_LIMIT_AI_ASK=30/minute
 ```
 
-Seed PostgreSQL database (run once):
+Provision Database, Schema, Views, and Read-Only Role:
 ```bash
+psql -h localhost -U postgres -d insightforge -f database/schema.sql
+psql -h localhost -U postgres -d insightforge -f database/views.sql
+psql -h localhost -U postgres -d insightforge -f database/roles.sql
 python database/seed.py
 ```
 
@@ -137,10 +143,23 @@ python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 - **Live Health Check**: `http://localhost:8000/api/health`
 - **Interactive Swagger Docs**: `http://localhost:8000/docs`
+- **AI Query History**: `http://localhost:8000/api/ai/history?limit=50`
 
 ---
 
-### 2. Frontend Setup (React + Vite + Tailwind)
+### 2. Docker Compose Deployment (Full Stack)
+
+To run the entire multi-container stack (PostgreSQL + FastAPI + React frontend):
+```bash
+docker compose up --build
+```
+- **React Frontend**: `http://localhost:3000`
+- **FastAPI Backend**: `http://localhost:8000`
+- **PostgreSQL**: `localhost:5432`
+
+---
+
+### 3. Frontend Setup (React + Vite + Tailwind)
 
 Navigate to frontend directory and install dependencies:
 ```bash
@@ -156,7 +175,7 @@ npm run dev
 
 ---
 
-### 3. Run Automated Test Suites
+### 4. Run Automated Test Suites & Evaluations
 
 Run database & analytics tests:
 ```bash
@@ -166,6 +185,11 @@ python database/test_analytics.py
 Run backend API & AI integration tests:
 ```bash
 python3 -m unittest discover -s backend/tests
+```
+
+Run offline AI Feature Golden Question Evaluations:
+```bash
+python backend/evals/run_eval.py
 ```
 
 Run semantic layer validation:
