@@ -23,6 +23,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 
 # Load environment variables
@@ -48,10 +49,12 @@ os.makedirs(RAW_DATA_DIR, exist_ok=True)
 
 def get_db_engine():
     """Create and return a SQLAlchemy database engine."""
+    user = quote_plus(DB_USER) if DB_USER else ""
     if DB_PASSWORD:
-        db_url = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        password = quote_plus(DB_PASSWORD)
+        db_url = f"postgresql://{user}:{password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     else:
-        db_url = f"postgresql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        db_url = f"postgresql://{user}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     return create_engine(db_url, echo=False)
 
 

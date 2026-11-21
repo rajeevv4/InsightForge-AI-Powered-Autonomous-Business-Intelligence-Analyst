@@ -1,17 +1,22 @@
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 from backend.app.config import settings
 
 
 def get_db_url() -> str:
+    user = quote_plus(settings.DB_USER) if settings.DB_USER else ""
     if settings.DB_PASSWORD:
-        return f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-    return f"postgresql://{settings.DB_USER}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+        password = quote_plus(settings.DB_PASSWORD)
+        return f"postgresql://{user}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    return f"postgresql://{user}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
 
 def get_readonly_db_url() -> str:
-    user = settings.DB_RO_USER or settings.DB_USER
-    password = settings.DB_RO_PASSWORD if settings.DB_RO_PASSWORD is not None else settings.DB_PASSWORD
-    if password:
+    raw_user = settings.DB_RO_USER or settings.DB_USER
+    raw_password = settings.DB_RO_PASSWORD if settings.DB_RO_PASSWORD is not None else settings.DB_PASSWORD
+    user = quote_plus(raw_user) if raw_user else ""
+    if raw_password:
+        password = quote_plus(raw_password)
         return f"postgresql://{user}:{password}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
     return f"postgresql://{user}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 

@@ -15,6 +15,7 @@ Centralized analytical engine providing Python & SQL analytical functions for:
 import os
 import sys
 import logging
+from urllib.parse import quote_plus
 import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
@@ -34,9 +35,11 @@ DB_SCHEMA = os.getenv("DB_SCHEMA", "insightforge")
 
 
 def _build_db_url():
+    user = quote_plus(DB_USER) if DB_USER else ""
     if DB_PASSWORD:
-        return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    return f"postgresql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        password = quote_plus(DB_PASSWORD)
+        return f"postgresql://{user}:{password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    return f"postgresql://{user}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
 # Module-level engine with connection pooling (created once, reused across calls)

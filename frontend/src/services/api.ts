@@ -12,7 +12,8 @@ import {
   AskAIResponse,
   AnomalyListResponse,
   AnomalyScanRequest,
-  AnomalyScanResponse
+  AnomalyScanResponse,
+  SQLAskResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
@@ -73,6 +74,11 @@ export const api = {
 
   askAI: async (question: string): Promise<AskAIResponse> => {
     const res = await client.post<AskAIResponse>('/ai/ask', { question });
+    return res.data;
+  },
+
+  sqlAskAI: async (question: string): Promise<SQLAskResponse> => {
+    const res = await client.post<SQLAskResponse>('/ai/sql-ask', { question });
     return res.data;
   },
 

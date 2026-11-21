@@ -2,7 +2,7 @@
 
 > **B.Tech Major Project**  
 > **Authors & Developers**: **Rajeev Karakoti**, **Priyanshu Saklani**, **Prasanna Godiyal**  
-> **Status**: ✅ **Levels 0 & 1 Complete — Viva & Production Ready**  
+> **Status**: ✅ **Levels 0, 1, 1.5, 2 & 3 Complete — Viva & Production Ready**  
 > **Dataset**: Olist Brazilian E-Commerce (~100,000 orders, 7 tables, Currency: `R$`)  
 > **Repository**: [InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst](https://github.com/rajeevv4/InsightForge-AI-Powered-Autonomous-Business-Intelligence-Analyst)
 
@@ -34,6 +34,8 @@ Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 1
 | **Level 0** | **Correctness & Mathematical Soundness** | ✅ **COMPLETE** | • **Eliminated Join Fan-Out**: Order-level review CTE in `views.sql` ensures category contribution strictly sums to $100.00\%$ and product revenue equals canonical $R\$ 13,221,498.11$.<br>• **Real Data Quality Audits**: Replaced hardcoded strings with computed PK uniqueness, FK integrity, domain bounds, and join safety audits.<br>• **BRL Standard**: Unified currency symbol to $R\$$ throughout charts, KPI cards, and heuristic answers.<br>• **Robust Intent Routing**: Word-boundary regex matching prevents false positives on sub-words.<br>• **Engine Pooling**: Module-level pooled SQLAlchemy engine (`pool_pre_ping=True`). |
 | **Level 1** | **Infrastructure for AI Features & Defense** | ✅ **COMPLETE** | • **Read-Only Database Role**: `insightforge_ro` role with SELECT-only grants and `statement_timeout = '5s'`.<br>• **AI Audit Logging**: `AIAuditService` persisting question, intent, latency, route, success flag, and error with `GET /api/ai/history`.<br>• **Golden Evaluation Suite**: 55 benchmark questions in `golden_questions.yaml` scored by offline CLI `run_eval.py` (**96.36% intent accuracy**, **100.00% numeric faithfulness**).<br>• **Grounding Verifier**: Regex token parser in `grounding.py` matching numbers against evidence within $\pm 0.05$ / $1.5\%$ with heuristic fallback.<br>• **API Rate Limiting**: `slowapi` limiter protecting `/api/ai/ask` (default 30/min).<br>• **Docker & CI/CD**: Multi-container `docker-compose.yml` and automated GitHub Actions CI workflow. |
 | **Level 1.5** | **Removal of Silent Fixture Fallbacks & Truthful Health** | ✅ **COMPLETE** | • **Zero Silent Fake Data**: Eliminated automatic canonical fallbacks; services raise `DatabaseUnavailableError` unless `USE_FIXTURES=1`.<br>• **HTTP 503 Service Unavailable**: Endpoints return standard 503 `"Database unavailable"` when DB is down.<br>• **Truthful Health & Data Source**: `/api/health` returns `data_source: "postgres" \| "fixture"` and reports `database: "disconnected"` truthfully.<br>• **UI DEMO DATA Badge**: Header displays prominent amber `"DEMO DATA"` badge when operating on fixtures.<br>• **Frontend ErrorBanner**: UI displays `ErrorBanner` on 503s instead of empty/fabricated charts.<br>• **Dual-Mode Eval CLI**: `run_eval.py` supports `--mode heuristic` and `--mode gemini`. |
+| **Level 2** | **Deterministic Multi-Method Anomaly Detection** | ✅ **COMPLETE** | • **Deterministic Engine**: 4 mathematical detection methods (Rolling MAD Robust Z-score, STL decomposition residuals, IQR dimension slices, and IsolationForest multivariate daily vectors).<br>• **Rule 4 & 5 Compliant**: Detection operates purely on real PostgreSQL delivered orders; LLM never detects anomalies.<br>• **Known Event Catalog**: Dynamic labelling of historical shopping holidays (e.g., Nov 2017 Black Friday) as `known_event_candidate` without hardcoded revenue.<br>• **IsolationForest Guardrail**: Requires consensus with univariate methods or marks severity as `low` to avoid spurious false positives.<br>• **REST API & UI**: `GET /api/anomalies`, rate-limited `POST /api/anomalies/scan`, and interactive React Anomalies dashboard with Recharts markers and severity filters. |
+| **Level 3** | **Guarded Text-to-SQL with Semantic Guardrails** | ✅ **COMPLETE** | • **Hybrid Routing Policy**: High-confidence requests ($\ge 0.80$) execute via deterministic intent views; free-form queries route to Guarded Text-to-SQL.<br>• **AST Security Validator**: Built on `sqlglot` AST parsing (not regex): strictly enforces single statement, SELECT-only, function/schema denylist (`pg_sleep`, `pg_catalog`), analytical table allow-list, Cartesian join prohibition, fan-out join rejection, and automatic `LIMIT <= 500`.<br>• **Read-Only Sandbox Execution**: Runs strictly through `insightforge_ro` (5s timeout) with `REVOKE SELECT ON ai_audit_log`.<br>• **Self-Correction Retry Loop**: Automated error diagnosis and AST re-prompting (max 2 retries) upon syntax or schema violations.<br>• **Grounded LLM Explanations**: Regex numeric faithfulness check on generated explanations against returned SQL rows.<br>• **Interactive UI**: "Show SQL" inspection modal, dynamic data table, and automatic Recharts visualization suggestions. |
 
 ---
 
@@ -63,6 +65,8 @@ InsightForge/
 │   │   │   ├── data_quality_service.py # 10-check data quality audit engine
 │   │   │   ├── ai_analytics_router.py # Controlled intent-to-view router
 │   │   │   ├── ai_service.py         # Gemini classifier & grounded synthesizer
+│   │   │   ├── sql_validator.py      # sqlglot AST SQL injection & safety validator
+│   │   │   ├── text_to_sql_service.py# Guarded Text-to-SQL engine with self-correction
 │   │   │   ├── audit_service.py      # AI interaction audit logger
 │   │   │   └── grounding.py          # Deterministic regex numeric faithfulness verifier
 │   │   └── routers/                  # Modular REST API endpoints
@@ -71,14 +75,15 @@ InsightForge/
 │   │       ├── analytics.py          # Category, revenue, state, seller, delivery endpoints
 │   │       ├── data_quality.py       # Data quality audit endpoint
 │   │       ├── anomalies.py          # GET /api/anomalies & POST /api/anomalies/scan
-│   │       └── ai.py                 # POST /api/ai/ask & GET /api/ai/history endpoints
+│   │       └── ai.py                 # POST /api/ai/ask, POST /api/ai/sql-ask & GET /api/ai/history
 │   ├── evals/
-│   │   ├── golden_questions.yaml     # 63 structured evaluation test cases with canonical metrics
-│   │   └── run_eval.py               # Offline benchmark scoring intent accuracy & numeric faithfulness
-│   └── tests/                        # 45+ unit tests
+│   │   ├── golden_questions.yaml     # 93 structured evaluation test cases (intent + SQL)
+│   │   └── run_eval.py               # Dual-mode benchmark (--mode heuristic | gemini | sql)
+│   └── tests/                        # 65+ unit tests
 │       ├── test_api.py               # Core REST API endpoint tests
 │       ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
 │       ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
+│       ├── test_sql_security.py      # Level 3 AST validator, SQL injection & routing tests
 │       ├── test_grounding.py         # Grounding verifier & hallucination detection tests
 │       ├── test_audit_service.py     # AI audit logging & ring-buffer tests
 │       ├── test_fixture_guard.py     # Rule 5 fixture enforcement tests
@@ -141,28 +146,43 @@ User Question
 [SlowAPI Rate Limiter (30/min)]
      │
      ▼
-[AI Intent Classifier] ───(Gemini 2.5 Flash / Word-Boundary Regex)
+[AI Intent Classifier & Hybrid Router]
      │
-     ▼
-[Controlled Analytics Router]
-     │
-     ▼
-[PostgreSQL 16: Read-Only Role (`insightforge_ro`)]
-  • statement_timeout = '5s'
-  • SELECT on schema `insightforge` views only
-     │
-     ▼
-[Structured Evidence Payload]
-     │
-     ▼
-[Grounding Verifier (`verify_numeric_grounding`)]
-  • Regex extracts every number from LLM answer
-  • Checks against evidence within ±0.05 or ±1.5%
-  ├── PASS ──► Return Verified Answer (grounding_verified=True)
-  └── FAIL ──► Reject Hallucination ──► Return Heuristic Fallback
-     │
-     ▼
-[AIAuditService] ──► Records question, route, latency, and status in `ai_audit_log`
+     ├── (Confidence ≥ 0.80) ────────────────────────────────────────────────────────┐
+     │   Intent Router                                                               │
+     │   │                                                                           │
+     │   ▼                                                                           │
+     │   [Controlled Analytics Views (Pre-tested SQL / CTEs)]                        │
+     │                                                                               │
+     └── (Confidence < 0.80 or Dynamic Query) ──────────────────────────────┐        │
+         Text-to-SQL Engine (Gemini 2.5 Flash + Semantic Context)           │        │
+         │                                                                  │        │
+         ▼                                                                  │        │
+         [AST SQL Validator (sqlglot)]                                      │        │
+           • Exactly 1 statement, SELECT/UNION only                         │        │
+           • Function & Schema denylist (pg_sleep, pg_catalog, etc.)        │        │
+           • Analytical table allow-list (rejects ai_audit_log)             │        │
+           • Rejects Cartesian & Fan-Out joins                              │        │
+           • Strips comments & enforces LIMIT <= 500                        │        │
+           ├── VIOLATION ──► Self-Correction Loop (Max 2 retries)           │        │
+           └── PASS ──────────────────────────────────────────────┐         │        │
+                                                                  ▼         ▼        ▼
+                                          [PostgreSQL 16: Read-Only Role (`insightforge_ro`)]
+                                            • statement_timeout = '5s'
+                                            • REVOKE SELECT on `ai_audit_log`
+                                                                  │
+                                                                  ▼
+                                                   [Structured Query Evidence / Rows]
+                                                                  │
+                                                                  ▼
+                                           [Grounding Verifier (`verify_numeric_grounding`)]
+                                             • Extracts numbers from LLM answer/explanation
+                                             • Checks against evidence rows within ±0.05 or ±1.5%
+                                             ├── PASS ──► grounding_verified = True
+                                             └── FAIL ──► Reject Hallucination / Fallback
+                                                                  │
+                                                                  ▼
+                                           [AIAuditService] ──► Records to `ai_audit_log`
 ```
 
 ---
@@ -251,11 +271,12 @@ InsightForge includes 4 automated verification suites that can be executed befor
 # 1. Database & Analytical Invariants Test Suite (8 tests)
 python database/test_analytics.py
 
-# 2. Backend API, AI Infrastructure & Fixture Guard Unit Tests (45+ tests)
+# 2. Backend API, AI Infrastructure, Anomaly Detection & SQL Security Unit Tests (65+ tests)
 python -m unittest discover -s backend/tests
 
-# 3. AI Golden Question Evaluation Benchmark (63 test cases)
-python backend/evals/run_eval.py
+# 3. AI Golden Question Evaluation Benchmark (93 test cases: 63 intent + 30 dynamic SQL)
+python backend/evals/run_eval.py --mode heuristic
+python backend/evals/run_eval.py --mode sql          # Requires live PostgreSQL & GEMINI_API_KEY
 
 # 4. Frontend TypeScript Validation & Production Build
 cd frontend; npx tsc --noEmit; npm run build
@@ -267,7 +288,7 @@ cd frontend; npx tsc --noEmit; npm run build
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/health` | `GET` | System health status & PostgreSQL database connectivity |
+| `/api/health` | `GET` | System health status, data source (`postgres` \| `fixture`), and database connectivity |
 | `/api/kpis` | `GET` | Canonical executive KPIs (`Product Rev: R$ 13.22M`, `Gross Rev: R$ 15.42M`, `Orders: 96,478`, `AOV: R$ 159.83`, `CSAT: 4.16`) |
 | `/api/analytics/revenue-trend` | `GET` | Monthly revenue, order volume, AOV, and MoM growth rates |
 | `/api/analytics/categories` | `GET` | Top product category sales, unit volume, review scores, and revenue share % |
@@ -278,20 +299,22 @@ cd frontend; npx tsc --noEmit; npm run build
 | `/api/data-quality` | `GET` | Automated 10-check data quality audit findings, null counts, and join safety status |
 | `/api/anomalies` | `GET` | Retrieve time series with flagged statistical anomalies (MAD Z-Score, STL, IQR, IsolationForest) |
 | `/api/anomalies/scan` | `POST` | Trigger multi-metric deterministic anomaly scan (rate-limited, logged to audit log) |
-| `/api/ai/ask` | `POST` | Process natural language question, classify intent, fetch PostgreSQL evidence, verify grounding, and return insight |
-| `/api/ai/history` | `GET` | Retrieve recorded AI interaction audit history with latency, intent, and status |
+| `/api/ai/ask` | `POST` | Controlled intent-based query: classify intent, fetch PostgreSQL evidence, verify grounding, and return insight |
+| `/api/ai/sql-ask` | `POST` | Guarded Text-to-SQL: AST validator, readonly execution, self-correction, grounding verifier, and chart suggestions |
+| `/api/ai/history` | `GET` | Retrieve recorded AI interaction audit history with latency, intent, route, and status |
 
 ---
 
-## 🧠 Semantic Layer Specifications
+## 🧠 Semantic Layer & Technical Architecture Specifications
 
 - [`semantic/business_glossary.yaml`](semantic/business_glossary.yaml) — Standardized Business Terms & Synonyms
 - [`semantic/metrics.yaml`](semantic/metrics.yaml) — Canonical Metric Formulas & Benchmark Targets
 - [`semantic/dimensions.yaml`](semantic/dimensions.yaml) — Analytical Dimensions Catalog
 - [`semantic/relationships.yaml`](semantic/relationships.yaml) — Join Graph & Fan-Out Multiplication Guardrails
 - [`docs/viva_preparation.md`](docs/viva_preparation.md) — Comprehensive Viva Presentation & Defense Guide
-- [`docs/ai_infrastructure.md`](docs/ai_infrastructure.md) — AI Infrastructure, Role Separation & Verifier Architecture
+- [`docs/text_to_sql.md`](docs/text_to_sql.md) — Level 3 Guarded Text-to-SQL Architecture, AST Validator Rules & Self-Correction
 - [`docs/anomaly_detection.md`](docs/anomaly_detection.md) — Deterministic Multi-Method Anomaly Detection Engine Guide
+- [`docs/ai_infrastructure.md`](docs/ai_infrastructure.md) — AI Infrastructure, Role Separation & Grounding Verifier Architecture
 
 ---
 

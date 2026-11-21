@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,9 +26,11 @@ DB_SCHEMA = os.getenv("DB_SCHEMA", "insightforge")
 
 
 def _build_db_url():
+    user = quote_plus(DB_USER) if DB_USER else ""
     if DB_PASSWORD:
-        return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    return f"postgresql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        password = quote_plus(DB_PASSWORD)
+        return f"postgresql://{user}:{password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    return f"postgresql://{user}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 
 # Module-level engine with connection pooling

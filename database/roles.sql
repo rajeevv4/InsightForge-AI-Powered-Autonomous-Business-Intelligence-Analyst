@@ -25,6 +25,9 @@ GRANT USAGE ON SCHEMA insightforge TO insightforge_ro;
 -- 4. Grant SELECT on all existing tables and views in schema
 GRANT SELECT ON ALL TABLES IN SCHEMA insightforge TO insightforge_ro;
 
+-- 4b. Security Denylist: Explicitly revoke SELECT on internal audit & system tables
+REVOKE SELECT ON TABLE insightforge.ai_audit_log FROM insightforge_ro;
+
 -- 5. Automatically grant SELECT on future tables created in schema
 ALTER DEFAULT PRIVILEGES IN SCHEMA insightforge GRANT SELECT ON TABLES TO insightforge_ro;
 

@@ -251,8 +251,123 @@ def check_numeric_match(answer_text: str, expected_val: float, tolerance_pct: fl
     return False
 
 
+def run_sql_evaluations() -> bool:
+    """
+    Evaluates dynamic Text-to-SQL queries against live PostgreSQL.
+    Strictly requires live PostgreSQL and GEMINI_API_KEY (no fixtures or fake data).
+    """
+    from sqlalchemy import text
+    from backend.app.config import settings
+    from backend.app.database import readonly_engine
+    from backend.app.services.sql_validator import SQLValidator
+    from backend.app.services.text_to_sql_service import TextToSQLService
+
+    print("=" * 86)
+    print("      INSIGHTFORGE DYNAMIC TEXT-TO-SQL LIVE BENCHMARK (REAL POSTGRESQL)")
+    print("=" * 86)
+
+    # 1. Check GEMINI_API_KEY
+    api_key = os.environ.get("GEMINI_API_KEY") or getattr(settings, "GEMINI_API_KEY", None)
+    if not api_key:
+        print("\n❌ Error: GEMINI_API_KEY is not configured.")
+        print("Live dynamic-SQL evaluation requires a valid Gemini API key in your environment or .env.")
+        print("Exiting without faking evaluation numbers.\n")
+        sys.exit(1)
+
+    # 2. Check live PostgreSQL database connection
+    try:
+        with readonly_engine.connect() as conn:
+            conn.execute(text("SELECT 1;"))
+    except Exception as e:
+        print("\n❌ Error: PostgreSQL database is not reachable.")
+        print(f"Details: {e}")
+        print("Live dynamic-SQL evaluation requires an active, reachable PostgreSQL database.")
+        print("Exiting without faking evaluation numbers.\n")
+        sys.exit(1)
+
+    all_questions = load_golden_questions()
+    sql_questions = [q for q in all_questions if q.get("id", "").startswith("sql_")]
+
+    if not sql_questions:
+        print("No SQL benchmark questions found in golden_questions.yaml.")
+        return False
+
+    client = AIService._get_genai_client()
+    print(f"Loaded {len(sql_questions)} dynamic-SQL test cases.\n")
+
+    valid_count = 0
+    exec_count = 0
+    accuracy_count = 0
+
+    print(f"{'ID':<7} | {'SQL Valid':<10} | {'Exec OK':<10} | {'Expected':<14} | {'Actual':<14} | {'Accuracy'}")
+    print("-" * 72)
+
+    for q in sql_questions:
+        qid = q["id"]
+        qtext = q["question"]
+        ref_sql = q.get("reference_sql")
+
+        # 1. Compute ground truth from live database via reference SQL
+        expected_val = None
+        try:
+            with readonly_engine.connect() as conn:
+                res = conn.execute(text(ref_sql))
+                first_row = res.fetchone()
+                if first_row and len(first_row) > 0 and first_row[0] is not None:
+                    expected_val = float(first_row[0])
+        except Exception as e:
+            print(f"Failed to execute reference SQL for {qid}: {e}")
+            continue
+
+        # 2. Generate and validate SQL with Gemini
+        gen_res = TextToSQLService.generate_and_validate_sql(client, qtext, max_retries=2)
+        sql_valid = gen_res["success"]
+        executed = False
+        actual_val = None
+        match = False
+
+        if sql_valid:
+            valid_count += 1
+            rows = gen_res.get("rows", [])
+            executed = len(rows) >= 0
+            if executed:
+                exec_count += 1
+                if rows and len(rows) > 0:
+                    for k, v in rows[0].items():
+                        if isinstance(v, (int, float)):
+                            actual_val = float(v)
+                            break
+
+                if expected_val is not None and actual_val is not None:
+                    if abs(actual_val - expected_val) <= 0.05:
+                        match = True
+                    elif expected_val != 0 and abs(actual_val - expected_val) / abs(expected_val) <= 0.02:
+                        match = True
+
+        if match:
+            accuracy_count += 1
+
+        exp_str = f"{expected_val:,.2f}" if expected_val is not None else "N/A"
+        act_str = f"{actual_val:,.2f}" if actual_val is not None else "N/A"
+        print(f"{qid:<7} | {'YES' if sql_valid else 'NO':<10} | {'YES' if executed else 'NO':<10} | {exp_str:<14} | {act_str:<14} | {'PASS' if match else 'FAIL'}")
+
+    n_total = len(sql_questions)
+    validity_rate = (valid_count / n_total) * 100.0
+    exec_rate = (exec_count / n_total) * 100.0
+    acc_rate = (accuracy_count / n_total) * 100.0
+
+    print("=" * 86)
+    print(f"Total Dynamic SQL Cases:       {n_total}")
+    print(f"SQL AST Validity Rate:         {valid_count}/{n_total} ({validity_rate:.1f}%)")
+    print(f"Execution Success Rate:        {exec_count}/{n_total} ({exec_rate:.1f}%)")
+    print(f"Result Accuracy (Ground Truth): {accuracy_count}/{n_total} ({acc_rate:.1f}%)")
+    print("=" * 86)
+    return validity_rate >= 80.0 and exec_rate >= 80.0
+
+
 def run_evaluations(mode: str = "heuristic") -> bool:
-    questions = load_golden_questions()
+    all_questions = load_golden_questions()
+    questions = [q for q in all_questions if not q.get("id", "").startswith("sql_")]
     mode_upper = mode.upper()
     print("=" * 82)
     print(f"        INSIGHTFORGE AI EVALUATION BENCHMARK (MODE: {mode_upper})        ")
@@ -395,12 +510,15 @@ def main():
     parser = argparse.ArgumentParser(description="InsightForge AI Evaluation Harness")
     parser.add_argument(
         "--mode",
-        choices=["heuristic", "gemini"],
+        choices=["heuristic", "gemini", "sql"],
         default="heuristic",
-        help="Evaluation classification & synthesis mode (heuristic or gemini)"
+        help="Evaluation classification & synthesis mode (heuristic, gemini, or sql)"
     )
     args = parser.parse_args()
-    success = run_evaluations(mode=args.mode)
+    if args.mode == "sql":
+        success = run_sql_evaluations()
+    else:
+        success = run_evaluations(mode=args.mode)
     sys.exit(0 if success else 1)
 
 

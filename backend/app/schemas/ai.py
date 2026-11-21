@@ -40,6 +40,20 @@ class AskAIResponse(BaseModel):
     grounding_verified: bool = Field(default=True, description="True if output numbers are grounded in evidence; False if verification failed and fallback was triggered")
 
 
+class SQLAskResponse(BaseModel):
+    question: str = Field(..., description="The original business query")
+    route: str = Field(..., description="'intent' if handled by deterministic router; 'text_to_sql' if handled by guarded SQL engine")
+    sql: Optional[str] = Field(default=None, description="The validated and executed SQL query (if text_to_sql route)")
+    explanation: str = Field(..., description="Synthesized grounded answer")
+    assumptions: Optional[List[str]] = Field(default=None, description="Assumptions or filters applied during SQL construction")
+    rows: Optional[List[Dict[str, Any]]] = Field(default=None, description="Capped rows returned by PostgreSQL (max 500)")
+    columns: Optional[List[str]] = Field(default=None, description="Column names returned")
+    row_count: int = Field(default=0, description="Number of rows returned")
+    grounding_verified: bool = Field(default=True, description="True if output numbers are faithful to row evidence")
+    suggested_chart: Optional[str] = Field(default=None, description="Suggested visualization ('bar', 'line', 'pie', 'table')")
+    error: Optional[str] = Field(default=None, description="Error or diagnostic detail if query failed")
+
+
 class AIAuditLogItem(BaseModel):
     id: Optional[int] = Field(default=None, description="Primary key id of the audit entry")
     question: str = Field(..., description="User query submitted")

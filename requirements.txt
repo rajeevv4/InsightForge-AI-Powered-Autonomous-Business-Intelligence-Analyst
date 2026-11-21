@@ -13,3 +13,4 @@ pyyaml>=6.0.0
 slowapi>=0.1.10
 statsmodels>=0.14.0
 scikit-learn>=1.3.0
+sqlglot>=25.0.0

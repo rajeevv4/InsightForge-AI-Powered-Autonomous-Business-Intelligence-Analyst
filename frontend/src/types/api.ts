@@ -113,6 +113,20 @@ export interface AskAIResponse {
   rephrase_suggested?: boolean;
 }
 
+export interface SQLAskResponse {
+  question: string;
+  route: 'intent' | 'text_to_sql';
+  sql?: string | null;
+  explanation: string;
+  assumptions?: string[] | null;
+  rows?: Record<string, any>[] | null;
+  columns?: string[] | null;
+  row_count: number;
+  grounding_verified: boolean;
+  suggested_chart?: 'bar' | 'line' | 'pie' | 'table' | null;
+  error?: string | null;
+}
+
 export interface AnomalyItem {
   metric: string;
   dimension: string;
