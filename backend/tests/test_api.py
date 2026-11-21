@@ -10,9 +10,15 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.app.main import app
 
+import os
+
 client = TestClient(app)
 
 class TestFastAPIBackend(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ["USE_FIXTURES"] = "1"
 
     @patch("backend.app.routers.health.check_db_connection", return_value=True)
     def test_health_endpoint(self, mock_check_db):
@@ -22,6 +28,7 @@ class TestFastAPIBackend(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["status"], "healthy")
         self.assertEqual(data["database"], "connected")
+        self.assertEqual(data["data_source"], "postgres")
         self.assertEqual(data["service"], "InsightForge")
 
     def test_kpis_endpoint(self):

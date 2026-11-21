@@ -1,6 +1,7 @@
 export interface HealthResponse {
   status: string;
   database: string;
+  data_source: 'postgres' | 'fixture';
   service: string;
   version: string;
 }

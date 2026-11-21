@@ -9,6 +9,8 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.app.services.analytics_service import AnalyticsService
 from backend.app.services.data_quality_service import DataQualityService
+from backend.app.fixture_guard import assert_database_available
+from backend.app.exceptions import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,10 @@ class AIAnalyticsRouter:
                 metric = "Data Quality Audit & Integrity Report"
             else:
                 raise ValueError(f"Unhandled intent routing: {intent}")
+        except DatabaseUnavailableError:
+            raise
         except Exception as e:
+            assert_database_available(e, f"ai_routing_{intent}")
             logger.warning(f"Live database query failed for '{intent}': {e}. Using canonical fixture fallback.")
             metric, data = cls._get_fallback_data(intent)
 

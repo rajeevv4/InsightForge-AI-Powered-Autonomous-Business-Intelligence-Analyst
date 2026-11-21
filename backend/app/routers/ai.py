@@ -7,6 +7,7 @@ from backend.app.limiter import limiter
 from backend.app.schemas.ai import AIAuditLogItem, AskAIRequest, AskAIResponse
 from backend.app.services.ai_service import AIService
 from backend.app.services.audit_service import AIAuditService
+from backend.app.exceptions import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,12 @@ def ask_ai_question(request: Request, payload: AskAIRequest) -> AskAIResponse:
     try:
         response = AIService.ask(payload.question)
         return response
+    except DatabaseUnavailableError as e:
+        logger.error(f"Database unavailable in Ask AI: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable"
+        )
     except ValueError as e:
         logger.warning(f"Validation error in Ask AI: {e}")
         raise HTTPException(

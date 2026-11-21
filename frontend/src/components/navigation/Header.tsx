@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Menu, Search, Bell, Sparkles } from 'lucide-react';
+import { HealthResponse } from '../../types/api';
 
 interface HeaderProps {
   onOpenMobileMenu: () => void;
+  health?: HealthResponse | null;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, health }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -105,9 +107,19 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu }) => {
           </button>
 
           <div>
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
-              {page.title}
-            </h1>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                {page.title}
+              </h1>
+              {health?.data_source === 'fixture' && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-amber-100 text-amber-800 border border-amber-300 shadow-xs"
+                  title="Database is unreachable; operating in offline fixture mode"
+                >
+                  DEMO DATA
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 hidden sm:block mt-0.5">
               {page.description}
             </p>

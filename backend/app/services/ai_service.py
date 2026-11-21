@@ -18,6 +18,7 @@ from backend.app.schemas.ai import AskAIResponse, AIEvidence
 from backend.app.services.ai_analytics_router import AIAnalyticsRouter, SUPPORTED_INTENTS
 from backend.app.services.grounding import verify_numeric_grounding
 from backend.app.services.audit_service import AIAuditService
+from backend.app.exceptions import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +397,18 @@ User Question: "{question}"
         # 3. Route to existing validated analytics function
         try:
             evidence_dict = AIAnalyticsRouter.route_intent(intent)
+        except DatabaseUnavailableError as e:
+            latency_ms = (time.time() - start_time) * 1000.0
+            logger.error(f"Database unavailable while routing intent '{intent}': {e}")
+            AIAuditService.log(
+                question=question,
+                intent=intent,
+                generated_sql=None,
+                latency_ms=latency_ms,
+                success=False,
+                error=str(e)
+            )
+            raise
         except Exception as e:
             latency_ms = (time.time() - start_time) * 1000.0
             logger.error(f"Error routing intent '{intent}': {e}")

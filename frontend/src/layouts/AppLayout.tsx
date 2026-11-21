@@ -24,8 +24,9 @@ export const AppLayout: React.FC = () => {
       setHealth(data);
     } catch (err) {
       setHealth({
-        status: 'degraded',
+        status: 'unhealthy',
         database: 'disconnected',
+        data_source: 'postgres',
         service: 'InsightForge',
         version: '0.1.0',
       });
@@ -53,6 +54,7 @@ export const AppLayout: React.FC = () => {
         {/* Top Header */}
         <Header
           onOpenMobileMenu={() => setMobileOpen(true)}
+          health={health}
         />
 
         {/* Page Content View */}

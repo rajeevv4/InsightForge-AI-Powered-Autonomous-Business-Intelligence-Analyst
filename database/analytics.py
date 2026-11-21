@@ -48,6 +48,24 @@ def get_db_engine():
     return _engine
 
 
+try:
+    from backend.app.exceptions import DatabaseUnavailableError
+except ImportError:
+    class DatabaseUnavailableError(Exception):
+        pass
+
+
+def _assert_fixtures_allowed(err: Exception, op_name: str) -> None:
+    env_val = os.getenv("USE_FIXTURES", "").strip().lower()
+    if env_val in ("1", "true", "yes"):
+        return
+    raise DatabaseUnavailableError(
+        f"Database unavailable during '{op_name}': {err}. "
+        f"NO silent fake data is allowed. Live database connection is required. "
+        f"To enable mock fixtures for offline testing or demo, set USE_FIXTURES=1."
+    ) from err
+
+
 def get_summary_kpis():
     """Retrieve overall company executive summary metrics for delivered orders."""
     engine = get_db_engine()
@@ -81,6 +99,7 @@ def get_summary_kpis():
             df = pd.read_sql(sql, conn)
         return df.to_dict(orient="records")[0]
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_summary_kpis")
         logger.warning(f"Database query failed in get_summary_kpis: {e}. Using canonical fallback.")
         return {
             "total_delivered_orders": 96478,
@@ -120,6 +139,7 @@ def get_monthly_performance():
             df = pd.read_sql(sql, conn)
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_monthly_performance")
         logger.warning(f"Database query failed in get_monthly_performance: {e}. Using canonical fallback.")
         months = [
             ("2017-01-01", 750, 900, 95000.0, 16780.0, 111780.0, 149.04, None, None, None, None, None),
@@ -168,6 +188,7 @@ def get_category_analytics(top_n=10):
             df = pd.read_sql(sql, conn, params={"limit_val": top_n})
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_category_analytics")
         logger.warning(f"Database query failed in get_category_analytics: {e}. Using canonical fallback.")
         categories = [
             ("health_beauty", 8836, 9670, 1258819.00, 130.18, 4.14, 9.52),
@@ -213,6 +234,7 @@ def get_bottom_categories(limit=5):
             df = pd.read_sql(sql, conn, params={"limit_val": limit})
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_bottom_categories")
         logger.warning(f"Database query failed in get_bottom_categories: {e}. Using canonical fallback.")
         bottom = [
             ("security_and_services", 2, 2, 283.29, 141.65, 2.50, 0.00),
@@ -249,6 +271,7 @@ def get_state_analytics():
             df = pd.read_sql(sql, conn)
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_state_analytics")
         logger.warning(f"Database query failed in get_state_analytics: {e}. Using canonical fallback.")
         states = [
             ("SP", 40494, 40494, 5221975.36, 709827.00, 5931802.36, 17.53, 39.50),
@@ -308,6 +331,7 @@ def get_seller_analytics(top_n=10):
             df = pd.read_sql(sql, conn, params={"limit_val": top_n})
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_seller_analytics")
         logger.warning(f"Database query failed in get_seller_analytics: {e}. Using canonical fallback.")
         sellers = [
             ("4869f7a5dfa277a7dca6462dcf3b52b2", "guariba", "SP", 1132, 1156, 82, 229472.63, 4.12),
@@ -347,6 +371,7 @@ def get_delivery_performance():
             df = pd.read_sql(sql, conn)
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_delivery_performance")
         logger.warning(f"Database query failed in get_delivery_performance: {e}. Using canonical fallback.")
         sla = [
             ("On-Time", 88651, 91.90, 12.50, 23.40, None),
@@ -380,6 +405,7 @@ def get_payment_analytics():
             df = pd.read_sql(sql, conn)
         return df
     except Exception as e:
+        _assert_fixtures_allowed(e, "get_payment_analytics")
         logger.warning(f"Database query failed in get_payment_analytics: {e}. Using canonical fallback.")
         payments = [
             ("credit_card", 76795, 12542084.19, 163.32, 3.5),

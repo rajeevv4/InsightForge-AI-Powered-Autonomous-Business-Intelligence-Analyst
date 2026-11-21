@@ -17,6 +17,7 @@ from database.analytics import (
     get_delivery_performance,
     get_payment_analytics
 )
+from backend.app.fixture_guard import assert_database_available
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class AnalyticsService:
                 "csat": float(raw["average_csat_score"])
             }
         except Exception as e:
+            assert_database_available(e, "KPIs")
             logger.warning(f"Live database query failed for KPIs: {e}. Using canonical fixture fallback.")
             return {
                 "product_revenue": 13221498.11,
@@ -80,6 +82,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "revenue_trend")
             logger.warning(f"Live database query failed for revenue trend: {e}. Using canonical fixture fallback.")
             months = [
                 ("2017-01", 750, 900, 111780.00, 14.9, 149.04, None),
@@ -133,6 +136,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "categories")
             logger.warning(f"Live database query failed for categories: {e}. Using canonical fixture fallback.")
             canonical = [
                 {"category": "health_beauty", "product_category_name_english": "health_beauty", "total_orders": 8836, "units_sold": 9670, "total_revenue": 1258819.00, "avg_item_price": 130.18, "avg_review_score": 4.14, "revenue_share_percent": 9.52},
@@ -168,6 +172,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "states")
             logger.warning(f"Live database query failed for states: {e}. Using canonical fixture fallback.")
             # 27 Brazilian Federation Units
             all_states = [
@@ -213,6 +218,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "sellers")
             logger.warning(f"Live database query failed for sellers: {e}. Using canonical fixture fallback.")
             canonical = [
                 {"seller_id": "4869f7a5dfa277a7dca6462dcf3b52b2", "seller_city": "guariba", "seller_state": "SP", "total_orders_fulfilled": 1132, "units_sold": 1156, "unique_products_offered": 82, "total_sales_revenue": 229472.63, "avg_seller_review_score": 4.12},
@@ -242,6 +248,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "delivery")
             logger.warning(f"Live database query failed for delivery: {e}. Using canonical fixture fallback.")
             return [
                 {"delivery_status": "On-Time", "order_count": 88651, "percentage": 91.90, "avg_actual_delivery_days": 12.50, "avg_estimated_delivery_days": 23.40, "avg_delay_days": None},
@@ -265,6 +272,7 @@ class AnalyticsService:
                 })
             return results
         except Exception as e:
+            assert_database_available(e, "payments")
             logger.warning(f"Live database query failed for payments: {e}. Using canonical fixture fallback.")
             return [
                 {"payment_type": "credit_card", "order_count": 76795, "total_payment_value": 12542084.19, "avg_payment_amount": 163.32, "avg_installments": 3.51, "payment_value_percent": 78.34},

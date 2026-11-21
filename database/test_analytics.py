@@ -6,6 +6,7 @@ Unit and integration test suite asserting mathematical accuracy, metric consiste
 join safety (zero fan-out inflation), non-negative constraints, and contribution sum accuracy.
 """
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -29,6 +30,7 @@ class TestInsightForgeAnalytics(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        os.environ.setdefault("USE_FIXTURES", "1")
         cls.engine = get_db_engine()
         cls.kpis = get_summary_kpis()
 

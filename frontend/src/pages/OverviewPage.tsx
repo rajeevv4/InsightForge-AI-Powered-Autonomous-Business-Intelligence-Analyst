@@ -25,6 +25,7 @@ import { RevenueTrendChart } from '../components/RevenueTrendChart';
 import { CategoryChart } from '../components/CategoryChart';
 import { StateChart } from '../components/StateChart';
 import { AskInsightForge } from '../components/AskInsightForge';
+import { ErrorBanner } from '../components/ErrorBanner';
 
 export const OverviewPage: React.FC = () => {
   const navigate = useNavigate();
@@ -53,7 +54,12 @@ export const OverviewPage: React.FC = () => {
     setKpiError(null);
     api.getKPIs()
       .then(setKpis)
-      .catch(() => setKpiError('Failed to fetch executive KPIs'))
+      .catch((err) => {
+        const msg = err?.response?.status === 503
+          ? 'Database unavailable: The database server is currently disconnected.'
+          : 'Failed to fetch executive KPIs';
+        setKpiError(msg);
+      })
       .finally(() => setKpiLoading(false));
 
     // 2. Revenue Trend
@@ -61,7 +67,12 @@ export const OverviewPage: React.FC = () => {
     setTrendError(null);
     api.getRevenueTrend()
       .then(setRevenueTrend)
-      .catch(() => setTrendError('Failed to fetch revenue trend analytics'))
+      .catch((err) => {
+        const msg = err?.response?.status === 503
+          ? 'Database unavailable: The database server is currently disconnected.'
+          : 'Failed to fetch revenue trend analytics';
+        setTrendError(msg);
+      })
       .finally(() => setTrendLoading(false));
 
     // 3. Categories
@@ -69,7 +80,12 @@ export const OverviewPage: React.FC = () => {
     setCategoryError(null);
     api.getCategories(10)
       .then(setCategories)
-      .catch(() => setCategoryError('Failed to fetch category analytics'))
+      .catch((err) => {
+        const msg = err?.response?.status === 503
+          ? 'Database unavailable: The database server is currently disconnected.'
+          : 'Failed to fetch category analytics';
+        setCategoryError(msg);
+      })
       .finally(() => setCategoryLoading(false));
 
     // 4. States
@@ -77,7 +93,12 @@ export const OverviewPage: React.FC = () => {
     setStateError(null);
     api.getStates()
       .then(setStates)
-      .catch(() => setStateError('Failed to fetch state sales analytics'))
+      .catch((err) => {
+        const msg = err?.response?.status === 503
+          ? 'Database unavailable: The database server is currently disconnected.'
+          : 'Failed to fetch state sales analytics';
+        setStateError(msg);
+      })
       .finally(() => setStateLoading(false));
   }, []);
 
@@ -131,64 +152,68 @@ export const OverviewPage: React.FC = () => {
         <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
           Executive KPIs
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard
-            title="Gross Revenue"
-            value={fmtCurr(kpis?.gross_revenue)}
-            subtitle="Product + Freight Sales"
-            icon={DollarSign}
-            color="indigo"
-          />
-          <KpiCard
-            title="Product Revenue"
-            value={fmtCurr(kpis?.product_revenue)}
-            subtitle="Net Sales Amount"
-            icon={ShoppingBag}
-            color="emerald"
-          />
-          <KpiCard
-            title="Freight Revenue"
-            value={fmtCurr(kpis?.freight_revenue)}
-            subtitle="Shipping Charges Collected"
-            icon={Truck}
-            color="amber"
-          />
-          <KpiCard
-            title="Delivered Orders"
-            value={fmtNum(kpis?.delivered_orders)}
-            subtitle="Fulfilled E-Commerce Orders"
-            icon={PackageCheck}
-            color="purple"
-          />
-          <KpiCard
-            title="Active Customers"
-            value={fmtNum(kpis?.active_customers)}
-            subtitle="Unique Purchasing Customers"
-            icon={Users}
-            color="blue"
-          />
-          <KpiCard
-            title="Units Sold"
-            value={fmtNum(kpis?.units_sold)}
-            subtitle="Total Purchased Line Items"
-            icon={Layers}
-            color="indigo"
-          />
-          <KpiCard
-            title="Average Order Value"
-            value={fmtCurr(kpis?.aov)}
-            subtitle="Revenue per Transaction"
-            icon={TrendingUp}
-            color="emerald"
-          />
-          <KpiCard
-            title="Customer Rating (CSAT)"
-            value={kpis?.csat ? `${kpis.csat.toFixed(2)} / 5.0` : '—'}
-            subtitle="Mean Satisfaction Rating"
-            icon={Star}
-            color="amber"
-          />
-        </div>
+        {kpiError ? (
+          <ErrorBanner message={kpiError} onRetry={loadOverviewData} />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard
+              title="Gross Revenue"
+              value={fmtCurr(kpis?.gross_revenue)}
+              subtitle="Product + Freight Sales"
+              icon={DollarSign}
+              color="indigo"
+            />
+            <KpiCard
+              title="Product Revenue"
+              value={fmtCurr(kpis?.product_revenue)}
+              subtitle="Net Sales Amount"
+              icon={ShoppingBag}
+              color="emerald"
+            />
+            <KpiCard
+              title="Freight Revenue"
+              value={fmtCurr(kpis?.freight_revenue)}
+              subtitle="Shipping Charges Collected"
+              icon={Truck}
+              color="amber"
+            />
+            <KpiCard
+              title="Delivered Orders"
+              value={fmtNum(kpis?.delivered_orders)}
+              subtitle="Fulfilled E-Commerce Orders"
+              icon={PackageCheck}
+              color="purple"
+            />
+            <KpiCard
+              title="Active Customers"
+              value={fmtNum(kpis?.active_customers)}
+              subtitle="Unique Purchasing Customers"
+              icon={Users}
+              color="blue"
+            />
+            <KpiCard
+              title="Units Sold"
+              value={fmtNum(kpis?.units_sold)}
+              subtitle="Total Purchased Line Items"
+              icon={Layers}
+              color="indigo"
+            />
+            <KpiCard
+              title="Average Order Value"
+              value={fmtCurr(kpis?.aov)}
+              subtitle="Revenue per Transaction"
+              icon={TrendingUp}
+              color="emerald"
+            />
+            <KpiCard
+              title="Customer Rating (CSAT)"
+              value={kpis?.csat ? `${kpis.csat.toFixed(2)} / 5.0` : '—'}
+              subtitle="Mean Satisfaction Rating"
+              icon={Star}
+              color="amber"
+            />
+          </div>
+        )}
       </section>
 
       {/* Overview Charts Grid */}

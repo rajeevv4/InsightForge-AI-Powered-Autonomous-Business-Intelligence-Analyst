@@ -55,9 +55,9 @@ InsightForge Level 1 AI Infrastructure provides a zero-hallucination, secure, an
     - 10 out-of-scope questions (weather, general programming, sports, trivia)
     - 5 ambiguous questions
 - **Evaluation Runner**: `backend/evals/run_eval.py`
-  - Runs offline without requiring an active database or live Gemini API key.
-  - Evaluates heuristic intent classification accuracy and canonical numeric faithfulness.
-  - Outputs a detailed per-category breakdown and benchmark summary.
+  - Supports `--mode heuristic` (offline rule-based intent classification & synthesis) and `--mode gemini` (live Google Gemini 2.5 Flash classification & synthesis).
+  - Evaluates intent classification accuracy and canonical numeric faithfulness.
+  - Formats output table labeled with active mode (`HEURISTIC` vs `GEMINI`).
 
 ---
 
@@ -72,3 +72,20 @@ InsightForge Level 1 AI Infrastructure provides a zero-hallucination, secure, an
 - **GitHub Actions (`.github/workflows/ci.yml`)**:
   - Runs unit tests and golden question evaluations against seeded PostgreSQL in CI.
   - Runs frontend TypeScript typechecking (`npx tsc --noEmit`) and production build.
+
+---
+
+## 8. Level 1.5: Strict Fixture Policy & Database Availability
+- **Removal of Silent Fallbacks**:
+  - All silent fallbacks to canonical/hardcoded fixtures across analytical services, data quality, and AI routing have been eliminated.
+  - When PostgreSQL is disconnected, analytical services raise `DatabaseUnavailableError` (`backend/app/exceptions.py`).
+- **Opt-In Fixture Mode (`USE_FIXTURES=1`)**:
+  - Fixtures are active **ONLY** when environment variable `USE_FIXTURES=1` is explicitly set (used in headless testing and CI where no live PostgreSQL service exists).
+  - In normal production and development, if the database is down, the system fails loudly and honestly.
+- **API Behavior on Database Failure**:
+  - FastAPI endpoints return `HTTP 503 Service Unavailable` with `{"detail": "Database unavailable"}`.
+  - The actual low-level connection trace is logged server-side without exposing credentials or internal topology to clients.
+- **Truthful Health Reporting & UI Demo Badge**:
+  - `/api/health` includes `data_source: "postgres" | "fixture"` and truthfully reports `database: "disconnected"` when offline.
+  - When `data_source == "fixture"`, the React frontend displays a prominent **"DEMO DATA"** badge in the header navigation bar.
+  - When endpoints return 503, the frontend displays an `ErrorBanner` rather than empty or fabricated charts.

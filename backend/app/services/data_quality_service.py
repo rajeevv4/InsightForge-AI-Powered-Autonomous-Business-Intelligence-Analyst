@@ -9,6 +9,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from database.data_quality import get_db_engine, DB_SCHEMA
+from backend.app.fixture_guard import assert_database_available
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,7 @@ class DataQualityService:
                 "anomalies_flagged": anomalies_flagged,
             }
         except Exception as e:
+            assert_database_available(e, "data_quality_audit")
             logger.warning(f"Live database query failed in DataQualityService: {e}. Returning canonical audit metrics.")
             return {
                 "audit_status": "PASS",

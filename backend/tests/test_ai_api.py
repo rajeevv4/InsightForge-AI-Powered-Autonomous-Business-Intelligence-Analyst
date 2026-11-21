@@ -8,7 +8,13 @@ from backend.app.services.ai_service import AIService
 from backend.app.schemas.ai import AskAIResponse, AIEvidence
 
 
+import os
+
 class TestAIAPI(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ["USE_FIXTURES"] = "1"
 
     def setUp(self):
         self.client = TestClient(app)

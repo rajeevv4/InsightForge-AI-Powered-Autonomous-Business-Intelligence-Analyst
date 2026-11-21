@@ -17,9 +17,12 @@ export const DataQualityPage: React.FC = () => {
     try {
       const data = await api.getDataQuality();
       setDataQuality(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch data quality audit report:', err);
-      setError('Failed to fetch data quality audit report from backend.');
+      const msg = err?.response?.status === 503
+        ? 'Database unavailable: The database server is currently disconnected.'
+        : 'Failed to fetch data quality audit report from backend.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
