@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from backend.app.config import settings
 from backend.app.limiter import limiter
-from backend.app.exceptions import DatabaseUnavailableError
+from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 from backend.app.schemas.anomaly import (
     AnomalyListResponse,
     AnomalyScanRequest,
@@ -30,6 +30,9 @@ def get_anomalies(
     """
     try:
         return AnomalyService.detect_all(grain=grain, metric=metric, severity=severity)
+    except QueryTimeoutError as e:
+        logger.error(f"Query timed out in GET /anomalies: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
     except DatabaseUnavailableError as e:
         logger.error(f"Database unavailable in GET /anomalies: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
@@ -65,6 +68,18 @@ def trigger_anomaly_scan(
             error=None
         )
         return scan_result
+    except QueryTimeoutError as e:
+        latency_ms = (time.time() - start_time) * 1000.0
+        logger.error(f"Query timed out in POST /anomalies/scan: {e}", exc_info=True)
+        AIAuditService.log(
+            question=f"Anomaly scan [{grain}]",
+            intent="anomaly_detection",
+            generated_sql=None,
+            latency_ms=latency_ms,
+            success=False,
+            error=str(e)
+        )
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
     except DatabaseUnavailableError as e:
         latency_ms = (time.time() - start_time) * 1000.0
         logger.error(f"Database unavailable in POST /anomalies/scan: {e}", exc_info=True)

@@ -107,7 +107,7 @@ questions:
   - id: del_02
     question: "What is the average delivery duration in days from order to customer?"
     expected_intent: "delivery_analysis"
-    expected_value: 10.9
+    expected_value: 10.88
     description: "Average days to deliver orders"
 
   - id: del_03
@@ -476,7 +476,7 @@ questions:
     description: "Canceled status order count"
 
   - id: sql_17
-    question: "What is the total revenue of the top 3 highest earning sellers combined?"
+    question: "What is the total product sales revenue (price only) of the top 3 highest earning sellers combined?"
     reference_sql: "SELECT ROUND(SUM(total_sales_revenue), 2) AS top3_revenue FROM (SELECT total_sales_revenue FROM view_seller_performance ORDER BY total_sales_revenue DESC LIMIT 3) sub;"
     expected_intent: "text_to_sql"
     description: "Top-3 seller revenue aggregate"
@@ -605,7 +605,7 @@ questions:
   - id: ml_hi_07
     question: "औसत डिलीवरी में कितने दिन लगते हैं?"
     expected_intent: "delivery_analysis"
-    expected_value: 10.9
+    expected_value: 10.88
     language: "hi"
     description: "Hindi: Average delivery days"
 

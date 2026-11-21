@@ -10,8 +10,8 @@ if str(BASE_DIR) not in sys.path:
 from backend.app.services.analytics_service import AnalyticsService
 from backend.app.services.data_quality_service import DataQualityService
 from backend.app.services.anomaly_service import AnomalyService
-from backend.app.fixture_guard import assert_database_available
-from backend.app.exceptions import DatabaseUnavailableError
+from backend.app.fixture_guard import assert_database_available, is_fixture_mode_allowed
+from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,8 @@ class AIAnalyticsRouter:
     @classmethod
     def _get_fallback_data(cls, intent: str) -> Tuple[str, Any]:
         """Provides verified canonical fallback fixtures when live database connection is unavailable."""
+        if not is_fixture_mode_allowed():
+            raise DatabaseUnavailableError("Fixture fallback is disallowed when USE_FIXTURES is not enabled.")
         if intent == "kpi_summary":
             return "Executive KPI Summary", {
                 "product_revenue": 13221498.11,
@@ -169,7 +171,7 @@ class AIAnalyticsRouter:
                 metric = "Statistical & Time-Series Anomaly Detection Report"
             else:
                 raise ValueError(f"Unhandled intent routing: {intent}")
-        except DatabaseUnavailableError:
+        except (DatabaseUnavailableError, QueryTimeoutError):
             raise
         except Exception as e:
             assert_database_available(e, f"ai_routing_{intent}")

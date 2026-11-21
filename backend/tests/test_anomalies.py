@@ -210,6 +210,12 @@ class TestAnomalyEndpoints(unittest.TestCase):
     - AI natural language intent classification
     """
 
+    def setUp(self):
+        AnomalyService.clear_cache()
+
+    def tearDown(self):
+        AnomalyService.clear_cache()
+
     def test_db_down_without_use_fixtures_returns_503(self):
         """When DB is down and USE_FIXTURES=0, endpoints must return HTTP 503 'Database unavailable'."""
         with patch.dict(os.environ, {"USE_FIXTURES": "0"}):

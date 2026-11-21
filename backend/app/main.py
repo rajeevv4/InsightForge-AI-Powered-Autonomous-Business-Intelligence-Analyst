@@ -6,7 +6,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from backend.app.config import settings
-from backend.app.exceptions import DatabaseUnavailableError
+from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 from backend.app.limiter import limiter
 from backend.app.routers import health, kpis, analytics, data_quality, ai, anomalies, voice, datasets
 
@@ -24,6 +24,15 @@ app = FastAPI(
 # Register slowapi rate limiter state and exception handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Register QueryTimeoutError exception handler (504 Gateway Timeout)
+@app.exception_handler(QueryTimeoutError)
+async def query_timeout_handler(request: Request, exc: QueryTimeoutError):
+    logger.error(f"Query timed out on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=504,
+        content={"detail": "Query timed out, please retry"}
+    )
 
 # Register DatabaseUnavailableError exception handler (503 Service Unavailable)
 @app.exception_handler(DatabaseUnavailableError)

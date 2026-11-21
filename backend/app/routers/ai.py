@@ -8,7 +8,7 @@ from backend.app.schemas.ai import AIAuditLogItem, AskAIRequest, AskAIResponse, 
 from backend.app.services.ai_service import AIService
 from backend.app.services.text_to_sql_service import TextToSQLService
 from backend.app.services.audit_service import AIAuditService
-from backend.app.exceptions import DatabaseUnavailableError
+from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,12 @@ def ask_ai_question(request: Request, payload: AskAIRequest) -> AskAIResponse:
     try:
         response = AIService.ask(payload.question)
         return response
+    except QueryTimeoutError as e:
+        logger.error(f"Query timed out in Ask AI: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Query timed out, please retry"
+        )
     except DatabaseUnavailableError as e:
         logger.error(f"Database unavailable in Ask AI: {e}", exc_info=True)
         raise HTTPException(
@@ -70,6 +76,12 @@ def ask_sql_question(request: Request, payload: AskAIRequest) -> SQLAskResponse:
     try:
         response = TextToSQLService.ask_sql(payload.question)
         return response
+    except QueryTimeoutError as e:
+        logger.error(f"Query timed out in SQL Ask: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Query timed out, please retry"
+        )
     except DatabaseUnavailableError as e:
         logger.error(f"Database unavailable in SQL Ask: {e}", exc_info=True)
         raise HTTPException(

@@ -33,6 +33,11 @@ from backend.app.services.ai_analytics_router import AIAnalyticsRouter, SUPPORTE
 from backend.app.services.grounding import verify_numeric_grounding
 from backend.app.services.audit_service import AIAuditService
 
+try:
+    from google.genai import types
+except ImportError:
+    types = None
+
 logger = logging.getLogger(__name__)
 
 # Core allowed schema catalog for LLM context
@@ -97,7 +102,7 @@ POSTGRESQL SCHEMA & ALLOWED TABLES (insightforge schema):
 CANONICAL ANALYTICAL VIEWS:
 - view_order_level_summary (order_id, customer_id, order_status, order_purchase_timestamp, item_count, total_product_amount, total_freight_amount, gross_order_amount)
 - view_monthly_kpis_mom (sales_month, total_orders, product_revenue, freight_revenue, gross_revenue, aov, mom_revenue_growth_pct)
-- view_category_contribution (category_name, category, total_orders, units_sold, total_revenue, avg_item_price, avg_review_score, revenue_contribution_pct)
+- view_category_contribution (category_name, total_orders, units_sold, total_revenue, avg_item_price, avg_review_score, revenue_contribution_pct)
 - view_state_contribution (customer_state, active_customers, total_orders, total_product_revenue, total_freight_revenue, total_gross_revenue, avg_freight_cost, revenue_contribution_pct)
 - view_delivery_sla_performance (delivery_status, orders_count, percentage, avg_actual_delivery_days, avg_estimated_delivery_days, avg_delay_days)
 - view_seller_performance (seller_id, seller_state, total_orders_fulfilled, units_sold, unique_products_offered, total_sales_revenue, avg_seller_review_score)
@@ -258,9 +263,11 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         while attempt <= max_retries:
             prompt = cls.build_generation_prompt(question, previous_error=last_error, previous_sql=last_sql)
             try:
+                gen_config = types.GenerateContentConfig(temperature=0.0) if types else None
                 response = client.models.generate_content(
                     model=settings.GEMINI_MODEL,
-                    contents=prompt
+                    contents=prompt,
+                    config=gen_config
                 )
                 text_resp = response.text.strip()
                 # Remove possible markdown fences ```json ... ```

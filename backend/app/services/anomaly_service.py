@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 import uuid
+import threading
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import numpy as np
@@ -65,48 +67,73 @@ class AnomalyService:
     e-commerce time series without LLM generation.
     """
 
+    CACHE_TTL: int = 300  # 5-minute server-side cache
+    _series_cache: Dict[Tuple[str, str], Tuple[float, pd.DataFrame]] = {}  # (dataset_id, grain) -> (timestamp, df)
+    _detect_cache: Dict[Tuple[str, str, str, Optional[str]], Tuple[float, Any]] = {}  # (dataset_id, grain, metric, severity) -> (timestamp, res)
+    _cache_lock = threading.Lock()
+
     @classmethod
-    def get_time_series(cls, grain: str = "daily") -> pd.DataFrame:
+    def clear_cache(cls, dataset_id: Optional[str] = None) -> None:
+        """
+        Invalidates cached time-series and anomaly results.
+        If dataset_id is provided, purges only entries for that dataset.
+        Otherwise purges all caches.
+        """
+        with cls._cache_lock:
+            if dataset_id:
+                cls._series_cache = {k: v for k, v in cls._series_cache.items() if k[0] != dataset_id}
+                cls._detect_cache = {k: v for k, v in cls._detect_cache.items() if k[0] != dataset_id}
+            else:
+                cls._series_cache.clear()
+                cls._detect_cache.clear()
+
+    @classmethod
+    def get_time_series(cls, grain: str = "daily", dataset_id: str = "olist-demo") -> pd.DataFrame:
         """
         Extract delivered order daily or weekly metrics from PostgreSQL.
         Trims sparse early-2016 data (before 2017-01-01) and incomplete final records (after 2018-08-31).
+        Utilizes 5-minute server-side cache and pre-filtered CTE aggregation.
+        Cache key is scoped by (dataset_id, grain) for multi-tenant dataset isolation.
         """
+        now = time.time()
+        cache_key = (dataset_id, grain)
+        with cls._cache_lock:
+            if cache_key in cls._series_cache:
+                cached_time, cached_df = cls._series_cache[cache_key]
+                if now - cached_time < cls.CACHE_TTL:
+                    return cached_df.copy()
+
         try:
             date_trunc = "day" if grain == "daily" else "week"
             query = text(f"""
-                WITH daily_orders AS (
+                WITH filtered_orders AS (
                     SELECT 
-                        DATE_TRUNC('{date_trunc}', o.order_purchase_timestamp)::DATE AS period_date,
-                        o.order_id,
-                        oi.price,
-                        oi.freight_value,
-                        CASE WHEN o.order_delivered_customer_date <= o.order_estimated_delivery_date THEN 1 ELSE 0 END AS on_time
-                    FROM insightforge.orders o
-                    JOIN insightforge.order_items oi ON o.order_id = oi.order_id
-                    WHERE o.order_status = 'delivered'
-                      AND o.order_purchase_timestamp >= '2017-01-01'
-                      AND o.order_purchase_timestamp < '2018-09-01'
+                        order_id,
+                        DATE_TRUNC('{date_trunc}', order_purchase_timestamp)::DATE AS period_date,
+                        CASE WHEN order_delivered_customer_date <= order_estimated_delivery_date THEN 1 ELSE 0 END AS on_time
+                    FROM insightforge.orders
+                    WHERE order_status = 'delivered'
+                      AND order_purchase_timestamp >= '2017-01-01'
+                      AND order_purchase_timestamp < '2018-09-01'
                 ),
                 daily_agg AS (
                     SELECT 
-                        period_date,
-                        SUM(price + freight_value) AS gross_revenue,
-                        COUNT(DISTINCT order_id) AS order_count,
-                        ROUND(SUM(price + freight_value) / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS aov,
-                        ROUND(AVG(on_time) * 100.0, 2) AS on_time_delivery_rate
-                    FROM daily_orders
-                    GROUP BY period_date
+                        fo.period_date,
+                        SUM(oi.price + oi.freight_value) AS gross_revenue,
+                        COUNT(DISTINCT fo.order_id) AS order_count,
+                        ROUND(SUM(oi.price + oi.freight_value) / NULLIF(COUNT(DISTINCT fo.order_id), 0), 2) AS aov,
+                        ROUND(AVG(fo.on_time) * 100.0, 2) AS on_time_delivery_rate
+                    FROM filtered_orders fo
+                    JOIN insightforge.order_items oi ON fo.order_id = oi.order_id
+                    GROUP BY fo.period_date
                 ),
                 reviews AS (
                     SELECT 
-                        DATE_TRUNC('{date_trunc}', o.order_purchase_timestamp)::DATE AS period_date,
+                        fo.period_date,
                         ROUND(AVG(r.review_score), 2) AS avg_review_score
-                    FROM insightforge.orders o
-                    JOIN insightforge.order_reviews r ON o.order_id = r.order_id
-                    WHERE o.order_status = 'delivered'
-                      AND o.order_purchase_timestamp >= '2017-01-01'
-                      AND o.order_purchase_timestamp < '2018-09-01'
-                    GROUP BY 1
+                    FROM filtered_orders fo
+                    JOIN insightforge.order_reviews r ON fo.order_id = r.order_id
+                    GROUP BY fo.period_date
                 )
                 SELECT 
                     d.period_date,
@@ -123,6 +150,8 @@ class AnomalyService:
                 df = pd.read_sql(query, conn)
             if not df.empty:
                 df["period"] = df["period_date"].astype(str)
+                with cls._cache_lock:
+                    cls._series_cache[cache_key] = (time.time(), df.copy())
                 return df
         except Exception as e:
             assert_database_available(e, f"anomaly_series_{grain}")
@@ -136,6 +165,8 @@ class AnomalyService:
         Canonical benchmark series derived from Olist e-commerce data (2017-01 to 2018-08).
         Includes the real historic 2017-11-24 Black Friday spike (R$ 158,000+ vs ~R$ 25,000 baseline).
         """
+        if not is_fixture_mode_allowed():
+            raise DatabaseUnavailableError("Fixture fallback is disallowed when USE_FIXTURES is not enabled.")
         np.random.seed(42)
         if grain == "daily":
             dates = pd.date_range("2017-01-01", "2018-08-31", freq="D")
@@ -469,13 +500,27 @@ class AnomalyService:
         cls,
         grain: str = "daily",
         metric: str = "gross_revenue",
-        severity: Optional[str] = None
+        severity: Optional[str] = None,
+        df: Optional[pd.DataFrame] = None,
+        iqr_anomalies: Optional[List[AnomalyItem]] = None,
+        dataset_id: str = "olist-demo"
     ) -> AnomalyListResponse:
         """
         Execute ensemble anomaly detection methods, format time series points,
         and filter results by metric, grain, and severity.
+        Cache key is scoped by (dataset_id, grain, metric, severity) for multi-tenant isolation.
         """
-        df = cls.get_time_series(grain=grain)
+        cache_key = (dataset_id, grain, metric, severity)
+        if df is None:
+            now = time.time()
+            with cls._cache_lock:
+                if cache_key in cls._detect_cache:
+                    cached_time, cached_res = cls._detect_cache[cache_key]
+                    if now - cached_time < cls.CACHE_TTL:
+                        return cached_res
+
+            df = cls.get_time_series(grain=grain, dataset_id=dataset_id)
+
         if metric not in df.columns:
             target_metric = "gross_revenue"
         else:
@@ -484,7 +529,8 @@ class AnomalyService:
         # 1. Run detection algorithms
         zscore_anomalies = cls.detect_rolling_zscore(df, metric=target_metric, window=14, threshold=2.5)
         stl_anomalies = cls.detect_stl_residuals(df, metric=target_metric, period=7 if grain == "daily" else 4, threshold=2.5)
-        iqr_anomalies = cls.detect_iqr_dimension_slices(metric=target_metric)
+        if iqr_anomalies is None:
+            iqr_anomalies = cls.detect_iqr_dimension_slices(metric=target_metric)
 
         # Collect periods flagged by z-score, STL, or IQR for multi-method confirmation
         confirmed_periods = {a.period for a in (zscore_anomalies + stl_anomalies + iqr_anomalies)}
@@ -532,7 +578,7 @@ class AnomalyService:
                 known_event=event_name
             ))
 
-        return AnomalyListResponse(
+        response = AnomalyListResponse(
             total_anomalies=len(all_items),
             grain=grain,
             metric=target_metric,
@@ -540,17 +586,32 @@ class AnomalyService:
             time_series=time_series_points
         )
 
+        with cls._cache_lock:
+            cls._detect_cache[cache_key] = (time.time(), response)
+
+        return response
+
     @classmethod
     def run_full_scan(cls, metrics: Optional[List[str]] = None, grain: str = "daily") -> AnomalyScanResponse:
         """
         Executes comprehensive multi-metric scan across business series.
+        Fetches the time-series once and shares across all metrics.
         """
         scan_id = str(uuid.uuid4())[:8]
         target_metrics = metrics or ["gross_revenue", "order_count", "aov", "on_time_delivery_rate", "avg_review_score"]
         all_detected: List[AnomalyItem] = []
 
+        # Single shared database query for time series & dimension slices
+        df = cls.get_time_series(grain=grain)
+        iqr_slices = cls.detect_iqr_dimension_slices(metric="gross_revenue")
+
         for m in target_metrics:
-            res = cls.detect_all(grain=grain, metric=m)
+            res = cls.detect_all(
+                grain=grain,
+                metric=m,
+                df=df,
+                iqr_anomalies=iqr_slices if "revenue" in m else []
+            )
             all_detected.extend(res.anomalies)
 
         # Deduplicate
