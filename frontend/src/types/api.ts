@@ -113,3 +113,49 @@ export interface AskAIResponse {
   rephrase_suggested?: boolean;
 }
 
+export interface AnomalyItem {
+  metric: string;
+  dimension: string;
+  period: string;
+  observed: number;
+  expected: number;
+  deviation_score: number;
+  severity: 'low' | 'medium' | 'high';
+  direction: 'spike' | 'drop';
+  method: string;
+  known_event_candidate?: string | null;
+}
+
+export interface AnomalyTimeSeriesPoint {
+  period: string;
+  observed: number;
+  expected?: number | null;
+  is_anomaly: boolean;
+  severity?: string | null;
+  deviation_score?: number | null;
+  known_event?: string | null;
+}
+
+export interface AnomalyListResponse {
+  metric: string;
+  grain: string;
+  total_anomalies: number;
+  anomalies: AnomalyItem[];
+  time_series: AnomalyTimeSeriesPoint[];
+}
+
+export interface AnomalyScanRequest {
+  grain?: string;
+  metrics?: string[];
+  methods?: string[];
+}
+
+export interface AnomalyScanResponse {
+  scan_status: string;
+  grain: string;
+  metrics_analyzed: string[];
+  total_anomalies_detected: number;
+  anomalies_by_severity: Record<string, number>;
+  anomalies: AnomalyItem[];
+}
+

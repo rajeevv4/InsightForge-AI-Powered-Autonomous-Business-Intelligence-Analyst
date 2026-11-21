@@ -1,6 +1,6 @@
 # InsightForge Evaluation Suite - Golden Questions Dataset
-# 55 Evaluation questions:
-# - 40 Domain-specific across 8 core intents (category, state, seller, delivery, payment, trend, KPIs, data quality)
+# 63 Evaluation questions:
+# - 48 Domain-specific across 9 core intents (category, state, seller, delivery, payment, trend, KPIs, data quality, anomalies)
 # - 10 Out-of-scope questions (should resolve to unknown / confidence < 0.60)
 # - 5 Ambiguous queries
 
@@ -242,6 +242,54 @@ questions:
     question: "What is our overall database health audit status?"
     expected_intent: "data_quality"
     description: "Audit status summary"
+
+  # ----------------------------------------------------------------------------
+  # Anomaly Detection (8 questions)
+  # ----------------------------------------------------------------------------
+  - id: anom_01
+    question: "Are there any unusual revenue spikes or outliers in our sales data?"
+    expected_intent: "anomaly_detection"
+    expected_value: 176940.50
+    description: "Revenue spike detection (Black Friday peak)"
+
+  - id: anom_02
+    question: "Did we detect any statistical anomalies or abnormal patterns?"
+    expected_intent: "anomaly_detection"
+    expected_value: 12.0
+    description: "Total anomaly count check"
+
+  - id: anom_03
+    question: "Was there a huge sales surge on Black Friday?"
+    expected_intent: "anomaly_detection"
+    expected_value: 176940.50
+    description: "Black Friday surge query"
+
+  - id: anom_04
+    question: "Show me abnormal drops or spikes across daily revenue"
+    expected_intent: "anomaly_detection"
+    expected_value: 176940.50
+    description: "Daily revenue anomaly detection"
+
+  - id: anom_05
+    question: "Are there any delivery delay outliers or spike anomalies?"
+    expected_intent: "anomaly_detection"
+    description: "Delivery delay anomaly query"
+
+  - id: anom_06
+    question: "Run an anomaly scan for abnormal e-commerce behavior"
+    expected_intent: "anomaly_detection"
+    description: "General anomaly scan trigger"
+
+  - id: anom_07
+    question: "Did any day experience an abnormal dip or surge in orders?"
+    expected_intent: "anomaly_detection"
+    description: "Order count dip or surge inquiry"
+
+  - id: anom_08
+    question: "What are the most severe outlier events in our transaction history?"
+    expected_intent: "anomaly_detection"
+    expected_value: 176940.50
+    description: "Severe outlier investigation"
 
   # ----------------------------------------------------------------------------
   # Out-Of-Scope Questions (10 questions)

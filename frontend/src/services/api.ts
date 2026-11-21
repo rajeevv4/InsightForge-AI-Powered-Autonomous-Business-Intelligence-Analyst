@@ -9,7 +9,10 @@ import {
   DeliverySLAItem,
   PaymentItem,
   DataQualityResponse,
-  AskAIResponse
+  AskAIResponse,
+  AnomalyListResponse,
+  AnomalyScanRequest,
+  AnomalyScanResponse
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api';
@@ -70,6 +73,20 @@ export const api = {
 
   askAI: async (question: string): Promise<AskAIResponse> => {
     const res = await client.post<AskAIResponse>('/ai/ask', { question });
+    return res.data;
+  },
+
+  getAnomalies: async (metric: string = 'gross_revenue', grain: string = 'daily', severity?: string): Promise<AnomalyListResponse> => {
+    let url = `/anomalies?metric=${encodeURIComponent(metric)}&grain=${encodeURIComponent(grain)}`;
+    if (severity && severity !== 'all') {
+      url += `&severity=${encodeURIComponent(severity)}`;
+    }
+    const res = await client.get<AnomalyListResponse>(url);
+    return res.data;
+  },
+
+  scanAnomalies: async (params?: AnomalyScanRequest): Promise<AnomalyScanResponse> => {
+    const res = await client.post<AnomalyScanResponse>('/anomalies/scan', params || {});
     return res.data;
   },
 };

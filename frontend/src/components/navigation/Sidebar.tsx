@@ -11,6 +11,7 @@ import {
   CreditCard,
   Truck,
   ShieldCheck,
+  AlertOctagon,
   Settings,
   HelpCircle,
   X,
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     { name: 'Payments', path: '/payments', icon: CreditCard },
     { name: 'Delivery', path: '/delivery', icon: Truck },
     { name: 'Data Quality', path: '/data-quality', icon: ShieldCheck },
+    { name: 'Anomalies', path: '/anomalies', icon: AlertOctagon },
   ];
 
   const bottomNavItems = [

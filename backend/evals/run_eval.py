@@ -202,6 +202,28 @@ CANONICAL_EVIDENCE: Dict[str, Dict[str, Any]] = {
             "domain_bounds_status": "PASS",
             "join_safety_status": "PASS (0.00 discrepancy)"
         }
+    },
+    "anomaly_detection": {
+        "source": "PostgreSQL analytics",
+        "intent": "anomaly_detection",
+        "metric": "Statistical Anomaly Detection",
+        "data": {
+            "total_anomalies": 12,
+            "top_anomalies": [
+                {
+                    "metric": "gross_revenue",
+                    "dimension": "overall",
+                    "period": "2017-11-24",
+                    "observed": 176940.50,
+                    "expected": 28450.00,
+                    "deviation_score": 6.85,
+                    "severity": "high",
+                    "direction": "spike",
+                    "method": "rolling_zscore",
+                    "known_event_candidate": "Black Friday 2017 (promotional_peak)"
+                }
+            ]
+        }
     }
 }
 
@@ -334,6 +356,7 @@ def run_evaluations(mode: str = "heuristic") -> bool:
         "trd": "Trend",
         "kpi": "KPIs",
         "dq": "Data Quality",
+        "anom": "Anomalies",
         "oos": "Out-of-Scope",
         "amb": "Ambiguous"
     }

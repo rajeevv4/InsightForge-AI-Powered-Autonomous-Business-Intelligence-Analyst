@@ -112,6 +112,8 @@ class AIService:
         """
         q = question.lower()
 
+        if any(cls._wb(w, q) for w in ["anomaly", "anomalies", "outlier", "outliers", "unusual", "spike", "spikes", "surge", "surges", "abnormal", "irregular", "irregularity", "irregularities", "dip", "dips", "unexpected peak", "black friday"]):
+            return {"intent": "anomaly_detection", "confidence": 0.95, "reason": "Question inquires about statistical anomalies, spikes, dips, or outliers."}
         if any(cls._wb(w, q) for w in ["category", "categories", "product category", "highest revenue category"]):
             return {"intent": "category_analysis", "confidence": 0.95, "reason": "Question asks for category sales or revenue ranking."}
         if any(cls._wb(w, q) for w in ["state", "states", "region", "regional", "geographic", "highest sales state"]):
@@ -149,12 +151,13 @@ SUPPORTED INTENTS:
 6. payment_analysis - Payment method distribution (credit card, boleto, voucher, debit), average installments, payment value.
 7. delivery_analysis - Delivery SLA performance, actual delivery days vs estimated days, delay status breakdown.
 8. data_quality - Data quality audit, row counts, missing values, primary/foreign key checks, join safety.
+9. anomaly_detection - Statistical anomalies, sales spikes, unusual drops, outliers, abnormal variations, seasonal events (Black Friday).
 
 If the question is completely unrelated to business intelligence, e-commerce, or these domains, set intent to "unknown" and confidence below 0.50.
 
 Respond strictly in valid JSON format:
 {{
-    "intent": "<one of the 8 supported intents or unknown>",
+    "intent": "<one of the 9 supported intents or unknown>",
     "confidence": <float between 0.0 and 1.0>,
     "reason": "<short explanation>"
 }}
@@ -297,6 +300,36 @@ User Question: "{question}"
                 f"Data quality audit status is **{status}**. Verified {tables} core database tables. "
                 f"Primary key uniqueness check: {pk}. Foreign key integrity check: {fk}."
             )
+
+        elif intent == "anomaly_detection":
+            if isinstance(data, dict):
+                total = data.get("total_anomalies", 0)
+                top_items = data.get("top_anomalies", [])
+            elif isinstance(data, list):
+                total = len(data)
+                top_items = data
+            else:
+                total = 0
+                top_items = []
+
+            if top_items:
+                top = top_items[0]
+                period = top.get("period", "")
+                metric_name = top.get("metric", "metric")
+                obs = top.get("observed", 0.0)
+                exp = top.get("expected", 0.0)
+                dev = top.get("deviation_score", 0.0)
+                direction = top.get("direction", "spike")
+                method = top.get("method", "statistical")
+                known = top.get("known_event_candidate")
+                event_note = f" (corresponds to {known})" if known else ""
+                val_str = f"R$ {obs:,.2f}" if "revenue" in metric_name or "aov" in metric_name else f"{obs:,.2f}"
+                return (
+                    f"Anomaly detection scan identified **{total}** statistical anomalies. "
+                    f"The top detected anomaly occurred on **{period}** in `{metric_name}` with a {direction} "
+                    f"to **{val_str}** (expected baseline {exp:,.2f}, deviation score {dev:.2f} via {method}){event_note}."
+                )
+            return f"Anomaly detection scan completed. Found {total} statistical anomalies."
 
         return f"Analytics query for intent '{intent}' executed successfully against PostgreSQL. Evidence data loaded."
 

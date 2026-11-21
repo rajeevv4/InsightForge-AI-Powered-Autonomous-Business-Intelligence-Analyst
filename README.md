@@ -55,9 +55,11 @@ InsightForge/
 │   │   ├── fixture_guard.py          # Rule 5 guard: NO silent fake data without USE_FIXTURES=1
 │   │   ├── schemas/                  # Pydantic validation schemas
 │   │   │   ├── ai.py                 # AskAIRequest, AskAIResponse, AIAuditLogItem
+│   │   │   ├── anomaly.py            # AnomalyItem, TimeSeriesPoint, ScanRequest/Response
 │   │   │   └── kpis.py               # KPISummaryResponse schema
 │   │   ├── services/                 # Business logic service layer
 │   │   │   ├── analytics_service.py  # Trusted analytics functions
+│   │   │   ├── anomaly_service.py    # Deterministic anomaly detection (MAD, STL, IQR, IsolationForest)
 │   │   │   ├── data_quality_service.py # 10-check data quality audit engine
 │   │   │   ├── ai_analytics_router.py # Controlled intent-to-view router
 │   │   │   ├── ai_service.py         # Gemini classifier & grounded synthesizer
@@ -68,13 +70,15 @@ InsightForge/
 │   │       ├── kpis.py               # Canonical KPI summary endpoint
 │   │       ├── analytics.py          # Category, revenue, state, seller, delivery endpoints
 │   │       ├── data_quality.py       # Data quality audit endpoint
+│   │       ├── anomalies.py          # GET /api/anomalies & POST /api/anomalies/scan
 │   │       └── ai.py                 # POST /api/ai/ask & GET /api/ai/history endpoints
 │   ├── evals/
-│   │   ├── golden_questions.yaml     # 55 structured evaluation test cases with canonical metrics
+│   │   ├── golden_questions.yaml     # 63 structured evaluation test cases with canonical metrics
 │   │   └── run_eval.py               # Offline benchmark scoring intent accuracy & numeric faithfulness
-│   └── tests/                        # 37 unit tests
+│   └── tests/                        # 45+ unit tests
 │       ├── test_api.py               # Core REST API endpoint tests
 │       ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
+│       ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
 │       ├── test_grounding.py         # Grounding verifier & hallucination detection tests
 │       ├── test_audit_service.py     # AI audit logging & ring-buffer tests
 │       ├── test_fixture_guard.py     # Rule 5 fixture enforcement tests
@@ -247,10 +251,10 @@ InsightForge includes 4 automated verification suites that can be executed befor
 # 1. Database & Analytical Invariants Test Suite (8 tests)
 python database/test_analytics.py
 
-# 2. Backend API, AI Infrastructure & Fixture Guard Unit Tests (37 tests)
+# 2. Backend API, AI Infrastructure & Fixture Guard Unit Tests (45+ tests)
 python -m unittest discover -s backend/tests
 
-# 3. AI Golden Question Evaluation Benchmark (55 test cases)
+# 3. AI Golden Question Evaluation Benchmark (63 test cases)
 python backend/evals/run_eval.py
 
 # 4. Frontend TypeScript Validation & Production Build
@@ -272,6 +276,8 @@ cd frontend; npx tsc --noEmit; npm run build
 | `/api/analytics/payments` | `GET` | Payment method breakdown (credit card, boleto, voucher, debit card) and installment averages |
 | `/api/analytics/delivery` | `GET` | Fulfillment SLA performance (`On-Time: 91.90%`, `Delayed: 8.10%`) and average delivery days |
 | `/api/data-quality` | `GET` | Automated 10-check data quality audit findings, null counts, and join safety status |
+| `/api/anomalies` | `GET` | Retrieve time series with flagged statistical anomalies (MAD Z-Score, STL, IQR, IsolationForest) |
+| `/api/anomalies/scan` | `POST` | Trigger multi-metric deterministic anomaly scan (rate-limited, logged to audit log) |
 | `/api/ai/ask` | `POST` | Process natural language question, classify intent, fetch PostgreSQL evidence, verify grounding, and return insight |
 | `/api/ai/history` | `GET` | Retrieve recorded AI interaction audit history with latency, intent, and status |
 
@@ -285,6 +291,7 @@ cd frontend; npx tsc --noEmit; npm run build
 - [`semantic/relationships.yaml`](semantic/relationships.yaml) — Join Graph & Fan-Out Multiplication Guardrails
 - [`docs/viva_preparation.md`](docs/viva_preparation.md) — Comprehensive Viva Presentation & Defense Guide
 - [`docs/ai_infrastructure.md`](docs/ai_infrastructure.md) — AI Infrastructure, Role Separation & Verifier Architecture
+- [`docs/anomaly_detection.md`](docs/anomaly_detection.md) — Deterministic Multi-Method Anomaly Detection Engine Guide
 
 ---
 

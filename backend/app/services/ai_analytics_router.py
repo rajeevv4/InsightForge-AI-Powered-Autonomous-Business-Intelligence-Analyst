@@ -9,6 +9,7 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.app.services.analytics_service import AnalyticsService
 from backend.app.services.data_quality_service import DataQualityService
+from backend.app.services.anomaly_service import AnomalyService
 from backend.app.fixture_guard import assert_database_available
 from backend.app.exceptions import DatabaseUnavailableError
 
@@ -22,7 +23,8 @@ SUPPORTED_INTENTS: List[str] = [
     "seller_analysis",
     "payment_analysis",
     "delivery_analysis",
-    "data_quality"
+    "data_quality",
+    "anomaly_detection"
 ]
 
 
@@ -90,6 +92,36 @@ class AIAnalyticsRouter:
                 "join_safety_status": "PASS (0.00 discrepancy)",
                 "anomalies_flagged": []
             }
+        elif intent == "anomaly_detection":
+            return "Statistical & Time-Series Anomaly Detection Report", {
+                "total_anomalies": 12,
+                "top_anomalies": [
+                    {
+                        "metric": "gross_revenue",
+                        "dimension": "overall",
+                        "period": "2017-11-24",
+                        "observed": 176940.50,
+                        "expected": 28450.00,
+                        "deviation_score": 6.85,
+                        "severity": "high",
+                        "direction": "spike",
+                        "method": "rolling_zscore",
+                        "known_event_candidate": "Black Friday 2017 (promotional_peak)"
+                    }
+                ],
+                "primary_anomaly": {
+                    "metric": "gross_revenue",
+                    "dimension": "overall",
+                    "period": "2017-11-24",
+                    "observed": 176940.50,
+                    "expected": 28450.00,
+                    "deviation_score": 6.85,
+                    "severity": "high",
+                    "direction": "spike",
+                    "method": "rolling_zscore",
+                    "known_event_candidate": "Black Friday 2017 (Record e-commerce sales peak across Brazil)"
+                }
+            }
         return "Analytics", {}
 
     @classmethod
@@ -126,6 +158,15 @@ class AIAnalyticsRouter:
             elif intent == "data_quality":
                 data = DataQualityService.fetch_audit_summary()
                 metric = "Data Quality Audit & Integrity Report"
+            elif intent == "anomaly_detection":
+                anom_res = AnomalyService.detect_all(grain="daily", metric="gross_revenue")
+                anom_list = [a.model_dump() for a in anom_res.anomalies[:5]]
+                data = {
+                    "total_anomalies": anom_res.total_anomalies,
+                    "top_anomalies": anom_list,
+                    "primary_anomaly": anom_list[0] if anom_list else None
+                }
+                metric = "Statistical & Time-Series Anomaly Detection Report"
             else:
                 raise ValueError(f"Unhandled intent routing: {intent}")
         except DatabaseUnavailableError:

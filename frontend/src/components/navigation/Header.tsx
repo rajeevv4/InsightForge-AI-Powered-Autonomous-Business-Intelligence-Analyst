@@ -65,6 +65,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, health }) => {
           title: 'Data Quality',
           description: 'Monitor the reliability and completeness of data used by InsightForge.'
         };
+      case '/anomalies':
+        return {
+          title: 'Statistical Anomalies',
+          description: 'Deterministic outlier detection across e-commerce time series and business dimensions.'
+        };
       case '/settings':
         return {
           title: 'Settings',
