@@ -65,6 +65,8 @@ class AnalyticsService:
     def fetch_revenue_trend() -> List[Dict[str, Any]]:
         try:
             df = get_monthly_performance()
+            if df.empty:
+                raise ValueError("No revenue trend data returned from database")
             results = []
             for _, r in df.iterrows():
                 results.append({
@@ -123,6 +125,8 @@ class AnalyticsService:
     def fetch_categories(limit: int = 10) -> List[Dict[str, Any]]:
         try:
             df = get_category_analytics(top_n=limit)
+            if df.empty:
+                raise ValueError("No category records returned from database")
             results = []
             for _, r in df.iterrows():
                 results.append({
@@ -158,6 +162,8 @@ class AnalyticsService:
     def fetch_states() -> List[Dict[str, Any]]:
         try:
             df = get_state_analytics()
+            if df.empty:
+                raise ValueError("No state records returned from database")
             results = []
             for _, r in df.iterrows():
                 results.append({
@@ -204,6 +210,8 @@ class AnalyticsService:
     def fetch_sellers(limit: int = 10) -> List[Dict[str, Any]]:
         try:
             df = get_seller_analytics(top_n=limit)
+            if df.empty:
+                raise ValueError("No seller records returned from database")
             results = []
             for _, r in df.iterrows():
                 results.append({
@@ -236,6 +244,8 @@ class AnalyticsService:
     def fetch_delivery_performance() -> List[Dict[str, Any]]:
         try:
             df = get_delivery_performance()
+            if df.empty:
+                raise ValueError("No delivery SLA records returned from database")
             results = []
             for _, r in df.iterrows():
                 results.append({
@@ -259,6 +269,8 @@ class AnalyticsService:
     def fetch_payments() -> List[Dict[str, Any]]:
         try:
             df = get_payment_analytics()
+            if df.empty:
+                raise ValueError("No payment records returned from database")
             results = []
             for _, r in df.iterrows():
                 avg_val = float(r["avg_payment_value"]) if "avg_payment_value" in r else float(r.get("avg_payment_amount", 0.0))

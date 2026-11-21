@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from database.data_quality import get_db_engine, DB_SCHEMA
+import database.data_quality as dq_mod
 from backend.app.fixture_guard import assert_database_available
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,8 @@ class DataQualityService:
 
     @staticmethod
     def fetch_audit_summary() -> Dict[str, Any]:
-        engine = get_db_engine()
+        engine = dq_mod.get_db_engine()
+        DB_SCHEMA = dq_mod.DB_SCHEMA
         tables = ["customers", "products", "sellers", "orders", "order_items", "order_payments", "order_reviews"]
 
         table_counts: Dict[str, int] = {}
@@ -146,13 +147,15 @@ class DataQualityService:
                 for st, cnt in st_rows:
                     order_statuses[st] = int(cnt)
 
-                # --- Join multiplier check ---
-                direct_sum = float(conn.execute(text(
+                # --- Join multiplier check (None-safe for empty DB) ---
+                raw_direct = conn.execute(text(
                     "SELECT SUM(price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_status = 'delivered'"
-                )).scalar())
-                summary_sum = float(conn.execute(text(
+                )).scalar()
+                raw_summary = conn.execute(text(
                     "SELECT SUM(total_product_amount) FROM view_order_level_summary WHERE order_status = 'delivered'"
-                )).scalar())
+                )).scalar()
+                direct_sum = float(raw_direct or 0.0)
+                summary_sum = float(raw_summary or 0.0)
                 diff = abs(direct_sum - summary_sum)
                 if diff >= 0.01:
                     overall_pass = False

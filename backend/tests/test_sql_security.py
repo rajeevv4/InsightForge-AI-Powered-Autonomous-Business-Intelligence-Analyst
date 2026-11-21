@@ -200,13 +200,28 @@ class TestTextToSQLServiceAndRouting(unittest.TestCase):
         self.assertEqual(result["attempts"], 2)
         self.assertIn("view_category_contribution", result["sql"])
 
+    @patch("backend.app.services.ai_analytics_router.AIAnalyticsRouter.route_intent")
     @patch("backend.app.services.ai_service.AIService.classify_intent_heuristic")
-    def test_routing_policy_high_confidence_uses_intent(self, mock_classify):
+    def test_routing_policy_high_confidence_uses_intent(self, mock_classify, mock_route):
         """Query with intent confidence >= 0.80 routes to deterministic intent router."""
         mock_classify.return_value = {
             "intent": "category_analysis",
             "confidence": 0.95,
             "reason": "Clear category revenue question"
+        }
+        mock_route.return_value = {
+            "source": "PostgreSQL analytics",
+            "intent": "category_analysis",
+            "metric": "Top Product Categories",
+            "data": [
+                {
+                    "category": "health_beauty",
+                    "product_category_name_english": "health_beauty",
+                    "total_revenue": 1258819.00,
+                    "revenue_contribution_pct": 9.52,
+                    "units_sold": 9670
+                }
+            ]
         }
         res = TextToSQLService.ask_sql("Which category generated the highest revenue?")
         self.assertEqual(res.route, "intent")

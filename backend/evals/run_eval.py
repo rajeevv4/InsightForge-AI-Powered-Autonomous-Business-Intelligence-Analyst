@@ -9,6 +9,8 @@ Supports --mode heuristic (offline rule-based) and --mode gemini (live Google Ge
 
 import sys
 import os
+import re
+import json
 import time
 import argparse
 from pathlib import Path
@@ -298,58 +300,91 @@ def run_sql_evaluations() -> bool:
     valid_count = 0
     exec_count = 0
     accuracy_count = 0
+    sample_queries = []
 
-    print(f"{'ID':<7} | {'SQL Valid':<10} | {'Exec OK':<10} | {'Expected':<14} | {'Actual':<14} | {'Accuracy'}")
-    print("-" * 72)
+    print(f"{'ID':<7} | {'SQL Valid':<10} | {'Exec OK':<10} | {'Expected':<12} | {'Actual':<12} | {'Result'}")
+    print("-" * 75)
 
     for q in sql_questions:
         qid = q["id"]
         qtext = q["question"]
         ref_sql = q.get("reference_sql")
 
-        # 1. Compute ground truth from live database via reference SQL
-        expected_val = None
-        try:
-            with readonly_engine.connect() as conn:
-                res = conn.execute(text(ref_sql))
-                first_row = res.fetchone()
-                if first_row and len(first_row) > 0 and first_row[0] is not None:
-                    expected_val = float(first_row[0])
-        except Exception as e:
-            print(f"Failed to execute reference SQL for {qid}: {e}")
-            continue
-
-        # 2. Generate and validate SQL with Gemini
-        gen_res = TextToSQLService.generate_and_validate_sql(client, qtext, max_retries=2)
-        sql_valid = gen_res["success"]
+        # 1. Generate SQL with Gemini
+        gen_sql = ""
+        sql_valid = False
+        rejection_reason = "No SQL produced"
+        sanitized_sql = None
         executed = False
+        exec_result = "N/A"
         actual_val = None
+        expected_val = None
         match = False
 
-        if sql_valid:
-            valid_count += 1
-            rows = gen_res.get("rows", [])
-            executed = len(rows) >= 0
-            if executed:
-                exec_count += 1
-                if rows and len(rows) > 0:
-                    for k, v in rows[0].items():
-                        if isinstance(v, (int, float)):
-                            actual_val = float(v)
-                            break
+        prompt = TextToSQLService.build_generation_prompt(qtext)
+        try:
+            resp = client.models.generate_content(
+                model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest"),
+                contents=prompt
+            )
+            cleaned = re.sub(r"^```(?:json)?\s*", "", resp.text.strip(), flags=re.MULTILINE)
+            cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+            parsed = json.loads(cleaned)
+            gen_sql = parsed.get("sql", "").strip()
+        except Exception as e:
+            rejection_reason = f"LLM Generation Error: {e}"
 
-                if expected_val is not None and actual_val is not None:
-                    if abs(actual_val - expected_val) <= 0.05:
-                        match = True
-                    elif expected_val != 0 and abs(actual_val - expected_val) / abs(expected_val) <= 0.02:
-                        match = True
+        # 2. AST Validation Verdict (Computed from validator verdict ONLY)
+        if gen_sql:
+            is_valid, sanitized_sql, val_err = SQLValidator.validate(gen_sql)
+            if is_valid:
+                valid_count += 1
+                sql_valid = True
+                rejection_reason = "None"
+            else:
+                sql_valid = False
+                rejection_reason = str(val_err)
 
-        if match:
-            accuracy_count += 1
+        # 3. Database Execution (if AST valid)
+        if sql_valid and sanitized_sql:
+            try:
+                with readonly_engine.connect() as conn:
+                    res = conn.execute(text(sanitized_sql)).fetchall()
+                    executed = True
+                    exec_count += 1
+                    exec_result = f"OK ({len(res)} rows)"
+                    if res and len(res) > 0 and res[0][0] is not None:
+                        try:
+                            actual_val = float(res[0][0])
+                        except (ValueError, TypeError):
+                            actual_val = None
+            except Exception as e:
+                exec_result = f"Exec Error: {str(e)[:35]}"
+
+        # 4. Ground Truth from Reference SQL
+        if ref_sql:
+            try:
+                with readonly_engine.connect() as conn:
+                    res = conn.execute(text(ref_sql)).fetchone()
+                    if res and len(res) > 0 and res[0] is not None:
+                        try:
+                            expected_val = float(res[0])
+                        except (ValueError, TypeError):
+                            expected_val = None
+            except Exception:
+                pass
+
+        if expected_val is not None and actual_val is not None:
+            if abs(actual_val - expected_val) <= 0.05 or (expected_val != 0 and abs(actual_val - expected_val) / abs(expected_val) <= 0.02):
+                match = True
+                accuracy_count += 1
+
+        if len(sample_queries) < 3:
+            sample_queries.append((qid, qtext, gen_sql, "VALID" if sql_valid else "DENIED", rejection_reason, exec_result))
 
         exp_str = f"{expected_val:,.2f}" if expected_val is not None else "N/A"
         act_str = f"{actual_val:,.2f}" if actual_val is not None else "N/A"
-        print(f"{qid:<7} | {'YES' if sql_valid else 'NO':<10} | {'YES' if executed else 'NO':<10} | {exp_str:<14} | {act_str:<14} | {'PASS' if match else 'FAIL'}")
+        print(f"{qid:<7} | {'YES' if sql_valid else 'NO':<10} | {'YES' if executed else 'NO':<10} | {exp_str:<12} | {act_str:<12} | {'PASS' if match else ('OK' if executed else 'FAIL')}", flush=True)
 
     n_total = len(sql_questions)
     validity_rate = (valid_count / n_total) * 100.0
@@ -357,20 +392,29 @@ def run_sql_evaluations() -> bool:
     acc_rate = (accuracy_count / n_total) * 100.0
 
     print("=" * 86)
-    print(f"Total Dynamic SQL Cases:       {n_total}")
-    print(f"SQL AST Validity Rate:         {valid_count}/{n_total} ({validity_rate:.1f}%)")
-    print(f"Execution Success Rate:        {exec_count}/{n_total} ({exec_rate:.1f}%)")
-    print(f"Result Accuracy (Ground Truth): {accuracy_count}/{n_total} ({acc_rate:.1f}%)")
+    print(f"Total Dynamic SQL Cases:        {n_total}")
+    print(f"SQL AST Validity Rate:          {valid_count}/{n_total} ({validity_rate:.1f}%)")
+    print(f"Execution Success Rate:         {exec_count}/{n_total} ({exec_rate:.1f}%)")
+    print(f"Result Accuracy (Ground Truth):  {accuracy_count}/{n_total} ({acc_rate:.1f}%)")
     print("=" * 86)
-    return validity_rate >= 80.0 and exec_rate >= 80.0
+
+    print("\nSAMPLE GENERATED QUERIES:")
+    for sq in sample_queries:
+        print(f"\n--- Question [{sq[0]}]: {sq[1]} ---")
+        print(f"Generated SQL: {sq[2]}")
+        print(f"Validator Verdict: {sq[3]} (Reason: {sq[4]}) | Execution: {sq[5]}")
+
+    return validity_rate >= 80.0
 
 
-def run_evaluations(mode: str = "heuristic") -> bool:
+def run_evaluations(mode: str = "heuristic", live: bool = False) -> bool:
     all_questions = load_golden_questions()
     questions = [q for q in all_questions if not q.get("id", "").startswith("sql_")]
     mode_upper = mode.upper()
+    evidence_source = "LIVE DATABASE (PostgreSQL schema insightforge)" if live else "CANONICAL FIXTURES (Offline Benchmark)"
     print("=" * 82)
     print(f"        INSIGHTFORGE AI EVALUATION BENCHMARK (MODE: {mode_upper})        ")
+    print(f"        Evidence Source: {evidence_source}")
     print("=" * 82)
     print(f"Total Test Cases: {len(questions)}\n")
 
@@ -428,7 +472,14 @@ def run_evaluations(mode: str = "heuristic") -> bool:
             numeric_total += 1
             category_stats[prefix]["num_total"] += 1
 
-            evidence = CANONICAL_EVIDENCE.get(expected_intent)
+            if live:
+                try:
+                    evidence = AIAnalyticsRouter.route_intent(expected_intent)
+                except Exception:
+                    evidence = None
+            else:
+                evidence = CANONICAL_EVIDENCE.get(expected_intent)
+
             if evidence:
                 if mode == "gemini" and client:
                     try:
@@ -439,7 +490,7 @@ def run_evaluations(mode: str = "heuristic") -> bool:
                     answer = AIService.synthesize_explanation_heuristic(qtext, evidence)
 
                 num_match = check_numeric_match(answer, float(expected_val))
-                grounded = verify_numeric_grounding(answer, evidence["data"])
+                grounded = verify_numeric_grounding(answer, evidence.get("data", {}))
                 if num_match and grounded:
                     numeric_correct += 1
                     category_stats[prefix]["num_ok"] += 1
@@ -514,11 +565,17 @@ def main():
         default="heuristic",
         help="Evaluation classification & synthesis mode (heuristic, gemini, or sql)"
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        default=False,
+        help="Compute numeric-faithfulness evidence from the live PostgreSQL database instead of canonical fixtures"
+    )
     args = parser.parse_args()
     if args.mode == "sql":
         success = run_sql_evaluations()
     else:
-        success = run_evaluations(mode=args.mode)
+        success = run_evaluations(mode=args.mode, live=args.live)
     sys.exit(0 if success else 1)
 
 

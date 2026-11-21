@@ -30,7 +30,7 @@ class TestInsightForgeAnalytics(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        os.environ.setdefault("USE_FIXTURES", "1")
+        os.environ["USE_FIXTURES"] = "1"
         cls.engine = get_db_engine()
         cls.kpis = get_summary_kpis()
 

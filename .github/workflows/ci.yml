@@ -72,6 +72,7 @@ jobs:
           DB_SCHEMA: insightforge
           DB_RO_USER: insightforge_ro
           DB_RO_PASSWORD: insightforge_ro_pass
+          USE_FIXTURES: "1"
         run: |
           python -m unittest discover -s backend/tests
 

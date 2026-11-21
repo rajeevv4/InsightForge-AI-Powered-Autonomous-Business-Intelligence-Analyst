@@ -135,7 +135,16 @@ class TestAnomalyDetectionMethods(unittest.TestCase):
 
     def test_iqr_slice_outlier(self):
         """IQR method must detect upper concentration outliers in dimension slices."""
-        anomalies = AnomalyService.detect_iqr_dimension_slices(metric="gross_revenue", threshold=1.5)
+        synthetic_slices = pd.DataFrame([
+            ("SP", 5041040.67), ("RJ", 1709477.34), ("MG", 1585308.03), ("RS", 750000.00),
+            ("PR", 680000.00), ("SC", 520000.00), ("BA", 500000.00), ("DF", 300000.00),
+            ("ES", 270000.00), ("GO", 290000.00), ("PE", 250000.00), ("CE", 220000.00),
+            ("PA", 180000.00), ("MT", 160000.00), ("MA", 120000.00), ("MS", 110000.00),
+            ("PB", 115000.00), ("PI", 86000.00), ("RN", 83000.00), ("AL", 80000.00),
+            ("SE", 58000.00), ("TO", 49000.00), ("RO", 46000.00), ("AM", 23000.00),
+            ("AC", 16000.00), ("AP", 13000.00), ("RR", 7000.00)
+        ], columns=["dim_name", "total_revenue"])
+        anomalies = AnomalyService.detect_iqr_dimension_slices(df=synthetic_slices, metric="gross_revenue", threshold=1.5)
         self.assertGreaterEqual(len(anomalies), 1, "IQR should identify slice outliers")
         self.assertTrue(any(a.method == "iqr_dimension" for a in anomalies))
 

@@ -265,20 +265,24 @@ npm run dev
 
 ### 4. Automated Test Suites & Evaluations (Viva Checklist)
 
-InsightForge includes 4 automated verification suites that can be executed before or during project presentations:
+InsightForge includes isolated verification suites with clearly defined execution modes:
 
 ```bash
-# 1. Database & Analytical Invariants Test Suite (8 tests)
-python database/test_analytics.py
-
-# 2. Backend API, AI Infrastructure, Anomaly Detection & SQL Security Unit Tests (65+ tests)
+# 1. Deterministic Unit Tests (77 tests, runs offline with USE_FIXTURES=1)
 python -m unittest discover -s backend/tests
 
-# 3. AI Golden Question Evaluation Benchmark (93 test cases: 63 intent + 30 dynamic SQL)
-python backend/evals/run_eval.py --mode heuristic
-python backend/evals/run_eval.py --mode sql          # Requires live PostgreSQL & GEMINI_API_KEY
+# 2. Mathematical Analytical Invariants Test Suite (8 tests)
+python database/test_analytics.py
 
-# 4. Frontend TypeScript Validation & Production Build
+# 3. Live Database Integration Tests (Requires real seeded PostgreSQL; skips if unseeded)
+python -m unittest discover -s backend/tests_integration
+
+# 4. AI Evaluation Benchmark
+python backend/evals/run_eval.py --mode heuristic          # Canonical benchmark (63 test cases)
+python backend/evals/run_eval.py --mode heuristic --live   # Evaluates evidence against live PostgreSQL
+python backend/evals/run_eval.py --mode sql                # Evaluates dynamic Text-to-SQL against live PostgreSQL & Gemini API (30 cases)
+
+# 5. Frontend TypeScript Validation & Production Build
 cd frontend; npx tsc --noEmit; npm run build
 ```
 

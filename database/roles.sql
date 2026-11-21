@@ -16,8 +16,13 @@ BEGIN
 END
 $do$;
 
--- 2. Grant Database connection
-GRANT CONNECT ON DATABASE insightforge TO insightforge_ro;
+-- 2. Grant Database connection dynamically on current database
+DO
+$do$
+BEGIN
+   EXECUTE format('GRANT CONNECT ON DATABASE %I TO insightforge_ro', current_database());
+END
+$do$;
 
 -- 3. Grant schema usage
 GRANT USAGE ON SCHEMA insightforge TO insightforge_ro;
@@ -31,5 +36,6 @@ REVOKE SELECT ON TABLE insightforge.ai_audit_log FROM insightforge_ro;
 -- 5. Automatically grant SELECT on future tables created in schema
 ALTER DEFAULT PRIVILEGES IN SCHEMA insightforge GRANT SELECT ON TABLES TO insightforge_ro;
 
--- 6. Enforce statement execution timeout (5 seconds defense in depth)
+-- 6. Enforce statement execution timeout (5 seconds defense in depth) and default schema
 ALTER ROLE insightforge_ro SET statement_timeout = '5s';
+ALTER ROLE insightforge_ro SET search_path TO insightforge, public;

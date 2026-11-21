@@ -100,7 +100,18 @@ def get_summary_kpis():
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn)
-        return df.to_dict(orient="records")[0]
+        if df.empty:
+            raise ValueError("No KPI data returned from database")
+        row = df.to_dict(orient="records")[0]
+        if int(row.get("total_delivered_orders") or 0) == 0:
+            raise ValueError("No delivered orders found in database")
+        # None-safe fallback for null sums on empty tables
+        for k in ["total_delivered_orders", "total_active_customers", "total_units_sold"]:
+            row[k] = int(row.get(k) or 0)
+        for k in ["total_product_revenue", "total_freight_revenue", "total_gross_revenue", "average_order_value_aov", "average_item_price", "average_csat_score"]:
+            val = row.get(k)
+            row[k] = float(val) if val is not None and not pd.isna(val) else 0.0
+        return row
     except Exception as e:
         _assert_fixtures_allowed(e, "get_summary_kpis")
         logger.warning(f"Database query failed in get_summary_kpis: {e}. Using canonical fallback.")
@@ -140,6 +151,8 @@ def get_monthly_performance():
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn)
+        if df.empty:
+            raise ValueError("No monthly KPI data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_monthly_performance")
@@ -189,6 +202,8 @@ def get_category_analytics(top_n=10):
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={"limit_val": top_n})
+        if df.empty:
+            raise ValueError("No category data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_category_analytics")
@@ -235,6 +250,8 @@ def get_bottom_categories(limit=5):
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={"limit_val": limit})
+        if df.empty:
+            raise ValueError("No bottom category data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_bottom_categories")
@@ -272,6 +289,8 @@ def get_state_analytics():
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn)
+        if df.empty:
+            raise ValueError("No monthly KPI data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_state_analytics")
@@ -332,6 +351,8 @@ def get_seller_analytics(top_n=10):
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn, params={"limit_val": top_n})
+        if df.empty:
+            raise ValueError("No category data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_seller_analytics")
@@ -372,6 +393,8 @@ def get_delivery_performance():
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn)
+        if df.empty:
+            raise ValueError("No monthly KPI data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_delivery_performance")
@@ -406,6 +429,8 @@ def get_payment_analytics():
     try:
         with engine.connect() as conn:
             df = pd.read_sql(sql, conn)
+        if df.empty:
+            raise ValueError("No monthly KPI data returned from database")
         return df
     except Exception as e:
         _assert_fixtures_allowed(e, "get_payment_analytics")
