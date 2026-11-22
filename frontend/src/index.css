@@ -2,24 +2,182 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   InsightForge design system
+   - Inter, one indigo/violet palette with gradient accents, soft shadows, 0.75-1rem radii
+   - CSS-only motion (no animation library); everything is disabled under prefers-reduced-motion
+   - Dark mode: `dark` class on <html>. Existing pages use plain slate/white utilities, so dark mode
+     re-maps those utilities here (one place) instead of touching every component.
+   ========================================================================== */
+
 @layer base {
+  :root { color-scheme: light; }
+  html.dark { color-scheme: dark; }
   body {
     @apply bg-slate-50 text-slate-800 font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
+  /* Visible, consistent keyboard focus everywhere */
+  :focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button:focus:not(:focus-visible) { outline: none; }
 }
 
-/* Custom light scrollbars */
-::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+@layer components {
+  /* Card that lifts on hover */
+  .card-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+  .card-lift:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgb(15 23 42 / 0.04), 0 16px 32px -16px rgb(79 70 229 / 0.28); }
+
+  /* Staggered entrance for direct children (grids of cards, sections) */
+  .stagger > * { animation: fade-in-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger > *:nth-child(n+8) { animation-delay: 350ms; }
+
+  /* Page transition wrapper */
+  .page-enter { animation: fade-in-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  /* Gradient text accent */
+  .text-gradient {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed 55%, #2563eb);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+  /* Shimmer skeleton (used by .skeleton and by every existing animate-pulse placeholder block) */
+  .skeleton,
+  .animate-pulse .bg-slate-100, .animate-pulse.bg-slate-100,
+  .animate-pulse .bg-slate-200, .animate-pulse.bg-slate-200 {
+    background-image: linear-gradient(90deg, rgb(241 245 249) 0%, rgb(226 232 240) 40%, rgb(241 245 249) 80%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /* Range/value inputs and selects: consistent radius */
+  select { border-radius: 0.5rem; }
 }
-::-webkit-scrollbar-track {
-  background: #F1F5F9;
+
+@keyframes fade-in-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+
+/* Skeleton blocks shimmer instead of blinking (outside @layer so it beats Tailwind's animate-pulse utility) */
+.animate-pulse:has(.bg-slate-100), .animate-pulse:has(.bg-slate-200) { animation: none; }
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  border-radius: 0.75rem !important;
+  box-shadow: 0 10px 30px -10px rgb(15 23 42 / 0.25) !important;
+  border-color: rgb(226 232 240) !important;
+  font-size: 12px;
 }
-::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 9999px;
+
+/* Custom scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+
+/* ==========================================================================
+   Reduced motion: no transitions, no entrance animations, no count-up flicker.
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .card-lift:hover { transform: none; }
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+
+/* ==========================================================================
+   Dark mode (html.dark). Re-maps the light utilities used across the app.
+   ========================================================================== */
+html.dark body { background-color: #0b1020; color: #e2e8f0; }
+html.dark .bg-white { background-color: #111827; }
+html.dark .bg-white\/80, html.dark .bg-white\/70, html.dark .bg-white\/90 { background-color: rgb(17 24 39 / 0.8); }
+html.dark .bg-slate-50, html.dark .bg-slate-50\/80, html.dark .bg-slate-50\/60, html.dark .bg-slate-50\/50 { background-color: #0b1020; }
+html.dark main .bg-slate-50, html.dark [role=dialog] .bg-slate-50, html.dark aside .bg-slate-50 { background-color: #172033; }
+html.dark .bg-slate-100 { background-color: #1e293b; }
+html.dark .bg-slate-200 { background-color: #334155; }
+html.dark .hover\:bg-slate-50:hover, html.dark .hover\:bg-slate-100:hover { background-color: #1e293b; }
+html.dark .hover\:bg-slate-200:hover { background-color: #334155; }
+html.dark .text-slate-900, html.dark .text-slate-950 { color: #f1f5f9; }
+html.dark .text-slate-800 { color: #e2e8f0; }
+html.dark .text-slate-700 { color: #cbd5e1; }
+html.dark .text-slate-600 { color: #a5b4c8; }
+html.dark .text-slate-500 { color: #94a3b8; }
+html.dark .text-slate-400 { color: #7c8aa0; }
+html.dark .border-slate-200, html.dark .border-slate-200\/80, html.dark .border-slate-200\/60,
+html.dark .border-slate-100, html.dark .border-slate-300 { border-color: #263248; }
+html.dark .divide-slate-100 > * + *, html.dark .divide-slate-200 > * + * { border-color: #263248; }
+html.dark .bg-indigo-50, html.dark .bg-indigo-50\/50 { background-color: rgb(99 102 241 / 0.14); }
+html.dark .bg-blue-50 { background-color: rgb(59 130 246 / 0.14); }
+html.dark .bg-emerald-50 { background-color: rgb(16 185 129 / 0.12); }
+html.dark .bg-rose-50, html.dark .bg-red-50 { background-color: rgb(244 63 94 / 0.12); }
+html.dark .bg-amber-50 { background-color: rgb(245 158 11 / 0.12); }
+html.dark .bg-purple-50 { background-color: rgb(139 92 246 / 0.14); }
+/* Status chips: translucent tint + light text (keeps contrast) */
+html.dark .bg-indigo-100 { background-color: rgb(99 102 241 / 0.22); }
+html.dark .bg-emerald-100 { background-color: rgb(16 185 129 / 0.2); }
+html.dark .bg-rose-100, html.dark .bg-red-100 { background-color: rgb(244 63 94 / 0.2); }
+html.dark .bg-amber-100 { background-color: rgb(245 158 11 / 0.2); }
+html.dark .bg-blue-100 { background-color: rgb(59 130 246 / 0.2); }
+html.dark .bg-purple-100 { background-color: rgb(139 92 246 / 0.22); }
+html.dark .text-emerald-600 { color: #34d399; }
+html.dark .text-rose-600, html.dark .text-red-600 { color: #fb7185; }
+html.dark .text-amber-600 { color: #fbbf24; }
+html.dark .text-blue-600 { color: #60a5fa; }
+/* Dark navy chart strokes (e.g. the forecast's actuals) become light in dark mode */
+html.dark .if-ink-line .recharts-line-curve { stroke: #e2e8f0; }
+html.dark .if-ink-line .recharts-line-dot { fill: #e2e8f0; stroke: #e2e8f0; }
+html.dark .text-indigo-700, html.dark .text-indigo-800 { color: #a5b4fc; }
+html.dark .text-indigo-600 { color: #818cf8; }
+html.dark .text-emerald-700, html.dark .text-emerald-800 { color: #6ee7b7; }
+html.dark .text-rose-700, html.dark .text-rose-800, html.dark .text-red-700 { color: #fda4af; }
+html.dark .text-amber-700, html.dark .text-amber-800, html.dark .text-amber-900 { color: #fcd34d; }
+html.dark .text-blue-700, html.dark .text-blue-800 { color: #93c5fd; }
+html.dark .border-indigo-100, html.dark .border-indigo-200, html.dark .border-emerald-200, html.dark .border-rose-200,
+html.dark .border-amber-200, html.dark .border-blue-200, html.dark .border-red-200, html.dark .border-emerald-100,
+html.dark .border-blue-100, html.dark .border-amber-100, html.dark .border-purple-100 { border-color: rgb(148 163 184 / 0.25); }
+html.dark input, html.dark select, html.dark textarea { background-color: #0f172a; color: #e2e8f0; border-color: #334155; }
+html.dark .skeleton, html.dark .animate-pulse .bg-slate-100, html.dark .animate-pulse.bg-slate-100,
+html.dark .animate-pulse .bg-slate-200, html.dark .animate-pulse.bg-slate-200 {
+  background-image: linear-gradient(90deg, #1e293b 0%, #2b3a52 40%, #1e293b 80%);
 }
+/* Charts */
+html.dark .recharts-cartesian-grid line { stroke: #263248; }
+html.dark .recharts-cartesian-axis-tick-value, html.dark .recharts-text { fill: #94a3b8; }
+html.dark .recharts-legend-item-text { color: #cbd5e1 !important; }
+html.dark .recharts-tooltip-wrapper .recharts-default-tooltip { background-color: #0f172a !important; border-color: #334155 !important; color: #e2e8f0; }
+html.dark .recharts-tooltip-cursor { fill: rgb(148 163 184 / 0.08); }
+html.dark .recharts-label-list text, html.dark .recharts-label { fill: #cbd5e1; }
+html.dark ::-webkit-scrollbar-thumb { background: #334155; }
+
+/* Keyframes used from inline styles (Tailwind only emits keyframes for animate-* classes it sees) */
+@keyframes confetti-fall {
+  0% { transform: translate3d(0, -10vh, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate3d(var(--drift, 0px), 105vh, 0) rotate(720deg); opacity: 0.9; }
+}
+
+/* Dark mode: opacity variants of the light tints used across pages */
+html.dark .bg-indigo-50\/80, html.dark .bg-indigo-50\/50, html.dark .bg-blue-50\/50, html.dark .bg-amber-50\/70,
+html.dark .bg-emerald-50\/70, html.dark .bg-rose-50\/70 { background-color: rgb(99 102 241 / 0.16); }
+html.dark .bg-amber-50\/70 { background-color: rgb(245 158 11 / 0.12); }
+html.dark .bg-slate-50\/70, html.dark .bg-slate-100\/70, html.dark .bg-slate-100\/80, html.dark .bg-slate-200\/80 { background-color: #1e293b; }
+html.dark .bg-green-50 { background-color: rgb(34 197 94 / 0.12); }
+html.dark .text-green-700 { color: #86efac; }
+html.dark .text-purple-700 { color: #d8b4fe; }
+html.dark .border-green-200, html.dark .border-purple-200 { border-color: rgb(148 163 184 / 0.25); }
+html.dark .hover\:bg-slate-100\/70:hover { background-color: #1e293b; }
+html.dark .hover\:bg-indigo-50:hover, html.dark .hover\:bg-indigo-100:hover { background-color: rgb(99 102 241 / 0.2); }
+html.dark .bg-white\/95 { background-color: rgb(15 23 42 / 0.95); }
+/* Custom chart ticks (TruncatedTick) and pie/legend text */
+html.dark .if-tick { fill: #94a3b8; }
+html.dark .recharts-pie-label-text { fill: #cbd5e1; }
+html.dark .recharts-sector { stroke: #111827; }

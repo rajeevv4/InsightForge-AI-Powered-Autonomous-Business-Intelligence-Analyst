@@ -23,7 +23,7 @@ For examiners, evaluators, and project presentations, read the dedicated **[Viva
 
 **InsightForge** is an enterprise-grade autonomous Business Intelligence analyst platform. It transforms natural-language business questions into data-backed executive insights, interactive visualizations, zero-hallucination grounded explanations, and automated data quality audits.
 
-Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 16**, InsightForge enforces a strict architectural boundary between AI reasoning and database analytics: the LLM never receives database credentials, never executes arbitrary SQL, and all numerical outputs are verified by a deterministic Grounding Verifier against computed PostgreSQL evidence before reaching the user.
+Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 15+** (Docker Compose & CI use `postgres:15-alpine`; also verified on PostgreSQL 16 locally and 17 on Supabase), InsightForge enforces a strict architectural boundary between AI reasoning and database analytics: the LLM never receives database credentials, never executes arbitrary SQL, and all numerical outputs are verified by a deterministic Grounding Verifier against computed PostgreSQL evidence before reaching the user.
 
 ---
 
@@ -32,13 +32,13 @@ Built on top of the **Olist Brazilian E-Commerce Dataset** inside **PostgreSQL 1
 | Level | Focus Area | Status | Key Deliverables & Engineering Achievements |
 |---|---|:---:|---|
 | **Level 0** | **Correctness & Mathematical Soundness** | ✅ **COMPLETE** | • **Eliminated Join Fan-Out**: Order-level review CTE in `views.sql` ensures category contribution strictly sums to $100.00\%$ and product revenue equals canonical $R\$ 13,221,498.11$.<br>• **Real Data Quality Audits**: Replaced hardcoded strings with computed PK uniqueness, FK integrity, domain bounds, and join safety audits.<br>• **BRL Standard**: Unified currency symbol to $R\$$ throughout charts, KPI cards, and heuristic answers.<br>• **Robust Intent Routing**: Word-boundary regex matching prevents false positives on sub-words.<br>• **Engine Pooling**: Module-level pooled SQLAlchemy engine (`pool_pre_ping=True`). |
-| **Level 1** | **Infrastructure for AI Features & Defense** | ✅ **COMPLETE** | • **Read-Only Database Role**: `insightforge_ro` role with SELECT-only grants and `statement_timeout = '5s'`.<br>• **AI Audit Logging**: `AIAuditService` persisting question, intent, latency, route, success flag, and error with `GET /api/ai/history`.<br>• **Golden Evaluation Suite**: 55 benchmark questions in `golden_questions.yaml` scored by offline CLI `run_eval.py` (**96.36% intent accuracy**, **100.00% numeric faithfulness**).<br>• **Grounding Verifier**: Regex token parser in `grounding.py` matching numbers against evidence within $\pm 0.05$ / $1.5\%$ with heuristic fallback.<br>• **API Rate Limiting**: `slowapi` limiter protecting `/api/ai/ask` (default 30/min).<br>• **Docker & CI/CD**: Multi-container `docker-compose.yml` and automated GitHub Actions CI workflow. |
+| **Level 1** | **Infrastructure for AI Features & Defense** | ✅ **COMPLETE** | • **Read-Only Database Role**: `insightforge_ro` role with SELECT-only grants and `statement_timeout = '5s'`.<br>• **AI Audit Logging**: `AIAuditService` persisting question, intent, latency, route, success flag, and error with `GET /api/ai/history`.<br>• **Golden Evaluation Suite**: 113 benchmark questions in `golden_questions.yaml` (83 intent cases + 30 Text-to-SQL cases) scored by CLI `run_eval.py` (**97.59% intent accuracy**, **100.00% numeric faithfulness** on the live DB).<br>• **Grounding Verifier**: Regex token parser in `grounding.py` matching numbers against evidence within $\pm 0.05$ / $1.5\%$ with heuristic fallback.<br>• **API Rate Limiting**: `slowapi` limiter protecting `/api/ai/ask` (default 30/min).<br>• **Docker & CI/CD**: Multi-container `docker-compose.yml` and automated GitHub Actions CI workflow. |
 | **Level 1.5** | **Removal of Silent Fixture Fallbacks & Truthful Health** | ✅ **COMPLETE** | • **Zero Silent Fake Data**: Eliminated automatic canonical fallbacks; services raise `DatabaseUnavailableError` unless `USE_FIXTURES=1`.<br>• **HTTP 503 Service Unavailable**: Endpoints return standard 503 `"Database unavailable"` when DB is down.<br>• **Truthful Health & Data Source**: `/api/health` returns `data_source: "postgres" \| "fixture"` and reports `database: "disconnected"` truthfully.<br>• **UI DEMO DATA Badge**: Header displays prominent amber `"DEMO DATA"` badge when operating on fixtures.<br>• **Frontend ErrorBanner**: UI displays `ErrorBanner` on 503s instead of empty/fabricated charts.<br>• **Dual-Mode Eval CLI**: `run_eval.py` supports `--mode heuristic` and `--mode gemini`. |
 | **Level 2** | **Deterministic Multi-Method Anomaly Detection** | ✅ **COMPLETE** | • **Deterministic Engine**: 4 mathematical detection methods (Rolling MAD Robust Z-score, STL decomposition residuals, IQR dimension slices, and IsolationForest multivariate daily vectors).<br>• **Rule 4 & 5 Compliant**: Detection operates purely on real PostgreSQL delivered orders; LLM never detects anomalies.<br>• **Known Event Catalog**: Dynamic labelling of historical shopping holidays (e.g., Nov 2017 Black Friday) as `known_event_candidate` without hardcoded revenue.<br>• **IsolationForest Guardrail**: Requires consensus with univariate methods or marks severity as `low` to avoid spurious false positives.<br>• **REST API & UI**: `GET /api/anomalies`, rate-limited `POST /api/anomalies/scan`, and interactive React Anomalies dashboard with Recharts markers and severity filters. |
 | **Level 3** | **Guarded Text-to-SQL with Semantic Guardrails** | ✅ **COMPLETE** | • **Hybrid Routing Policy**: High-confidence requests ($\ge 0.80$) execute via deterministic intent views; free-form queries route to Guarded Text-to-SQL.<br>• **AST Security Validator**: Built on `sqlglot` AST parsing (not regex): strictly enforces single statement, SELECT-only, function/schema denylist (`pg_sleep`, `pg_catalog`), analytical table allow-list, Cartesian join prohibition, fan-out join rejection, and automatic `LIMIT <= 500`.<br>• **Read-Only Sandbox Execution**: Runs strictly through `insightforge_ro` (5s timeout) with `REVOKE SELECT ON ai_audit_log`.<br>• **Self-Correction Retry Loop**: Automated error diagnosis and AST re-prompting (max 2 retries) upon syntax or schema violations.<br>• **Grounded LLM Explanations**: Regex numeric faithfulness check on generated explanations against returned SQL rows.<br>• **Interactive UI**: "Show SQL" inspection modal, dynamic data table, and automatic Recharts visualization suggestions. |
 | **Level 4** | **Hindi + English Voice Input & Resilient Fallback** | ✅ **COMPLETE** | • **Multimodal Audio Endpoint**: `POST /api/voice/transcribe` with in-memory buffer, MIME normalization (stripping `codecs=opus`), container magic-byte verification, and zero audio persistence.<br>• **Voice Quota Defense (503)**: Catches Gemini 429 quota exhaustion and returns clean HTTP 503 without leaking stack traces or raw JSON.<br>• **Browser Web Speech API Fallback**: Resilient fallback to browser SpeechRecognition (`hi-IN` / `en-IN` based on language selector) whenever backend voice is unavailable.<br>• **UI States & Timer**: Live countdown timer (`0:00 / 1:00`), recording pulse, transcribing spinner, editable question box, and speech language toggle.<br>• **Devanagari & Scale Grounding**: Devanagari digit translation (`०-९` $\rightarrow$ `0-9`) and South Asian numeric scale normalization (`lakh`/`लाख`, `crore`/`करोड़`). |
 | **Level 5 & 5.1** | **Dataset Workspace & Adversarial Ingestion Hardening** | ✅ **COMPLETE** | • **Multi-File Ingestion**: Safely parses CSV, TSV, and XLSX into dedicated `ds_<8hex>` schemas with quoted SQL identifiers (`psycopg2.sql.Identifier`).<br>• **Adversarial Ingestion Armor**: Rejects decompression zip bombs, ragged rows, formula injections (`=`, `+`, `-`, `@`), oversized payloads (>25MB), and directory traversal attacks.<br>• **Deterministic Profiling (Zero LLM)**: Instant computation of distinct counts, null %, min/max, numeric moments, and auto-inferred analytical roles (`id`, `datetime`, `measure`, `dimension`, `boolean`).<br>• **Multi-Format Datetime Engine**: Detects ISO, dd/mm vs mm/dd ambiguity flags, 12h AM/PM, month names, epoch s/ms, and Excel serial dates.<br>• **Multi-Table FK Inference**: Inferred 1:1 and 1:N relationships via $\ge 95\%$ containment graph.<br>• **Owner Isolation & Cleanup**: SHA-256 hashed owner tokens on all endpoints; automated cleanup daemon (`scripts/cleanup_datasets.py`) dropping expired schemas. |
-| **Level 6 & 6.1** | **Dataset-Aware Q&A, Semantic Layer & Cross-Dataset Defense-in-Depth** | ✅ **COMPLETE** | • **Deterministic Semantic Layer**: `insightforge.dataset_semantic` storing measures, dimensions, aggregations, and starter questions with draft/confirm review.<br>• **AST Cross-Dataset Scoping**: Scoped `sqlglot` AST validator requiring strict schema qualification (`ds_<8hex>.table`), blocking cross-dataset queries, shadow CTE aliases, unclosed comments, and dangerous functions (`dblink`, `to_regclass`, `current_setting`, `query_to_xml`).<br>• **Database Role Defense-in-Depth**: Dynamic NOLOGIN role `dsr_<8hex>` with `USAGE`/`SELECT` granted to `insightforge_ro`; queries run under `SET LOCAL ROLE dsr_<8hex>` + `SET LOCAL search_path`.<br>• **Privacy Scoping (`share_samples=False`)**: Zero cell values or canaries leak into prompts, retries, summaries, or audit logs; PostgreSQL errors sanitized.<br>• **Quick Insights & Time-Trend Anomaly Detection**: Automated pre-computed top-N and time-trend queries plus rolling MAD anomaly detection on custom datasets.<br>• **Generality & Verification**: Evaluated across 3 benchmark domains; offline unit suite (169 tests) and live integration tests passing. |
+| **Level 6 & 6.1** | **Dataset-Aware Q&A, Semantic Layer & Cross-Dataset Defense-in-Depth** | ✅ **COMPLETE** | • **Deterministic Semantic Layer**: `insightforge.dataset_semantic` storing measures, dimensions, aggregations, and starter questions with draft/confirm review.<br>• **AST Cross-Dataset Scoping**: Scoped `sqlglot` AST validator requiring strict schema qualification (`ds_<8hex>.table`), blocking cross-dataset queries, shadow CTE aliases, unclosed comments, and dangerous functions (`dblink`, `to_regclass`, `current_setting`, `query_to_xml`).<br>• **Database Role Defense-in-Depth**: Dynamic NOLOGIN role `dsr_<8hex>` with `USAGE`/`SELECT` granted to `insightforge_ro`; queries run under `SET LOCAL ROLE dsr_<8hex>` + `SET LOCAL search_path`.<br>• **Privacy Scoping (`share_samples=False`)**: Zero cell values or canaries leak into prompts, retries, summaries, or audit logs; PostgreSQL errors sanitized.<br>• **Quick Insights & Time-Trend Anomaly Detection**: Automated pre-computed top-N and time-trend queries plus rolling MAD anomaly detection on custom datasets.<br>• **Generality & Verification**: Evaluated across 3 benchmark domains; offline unit suite (277 tests) and live integration suite (25 tests) passing. |
 
 ---
 
@@ -111,7 +111,7 @@ InsightForge/
 │   │   ├── run_eval.py               # Dual-mode benchmark (--mode heuristic | gemini | sql)
 │   │   ├── dataset_eval.py           # Level 6 Generality evaluation harness for custom datasets
 │   │   └── .cache/                   # Persistent evaluation cache for LLM quota protection
-│   ├── tests/                        # 100+ hermetic unit tests
+│   ├── tests/                        # 277 hermetic unit tests
 │   │   ├── test_api.py               # Core REST API endpoint tests
 │   │   ├── test_ai_api.py            # AI router, history, rate-limiting & fallback tests
 │   │   ├── test_anomalies.py         # Multi-method anomaly detection & Black Friday tests
@@ -207,7 +207,7 @@ User Question
            ├── VIOLATION ──► Self-Correction Loop (Max 2 retries)           │        │
            └── PASS ──────────────────────────────────────────────┐         │        │
                                                                   ▼         ▼        ▼
-                                          [PostgreSQL 16: Read-Only Role (`insightforge_ro`)]
+                                          [PostgreSQL 15+: Read-Only Role (`insightforge_ro`)]
                                             • statement_timeout = '5s'
                                             • REVOKE SELECT on `ai_audit_log`
                                                                   │
@@ -224,6 +224,57 @@ User Question
                                                                   ▼
                                            [AIAuditService] ──► Records to `ai_audit_log`
 ```
+
+---
+
+## 🗂 Dataset-Aware Workspace (one active dataset for the whole app)
+
+Choose the active dataset in the header switcher. With the **Olist demo** every page is unchanged (verified
+byte-for-byte by `scripts/diff_olist_snapshots.py`); with an **uploaded dataset** every sidebar page shows that
+dataset's data. All of it is deterministic (no LLM), owner-token protected, and runs through the same scoped
+read-only, AST-validated query path. Full details: [docs/dataset_workspace_pages.md](docs/dataset_workspace_pages.md).
+
+### What works for uploaded datasets
+
+| Page | Uploaded dataset behaviour |
+|---|---|
+| Sidebar | Core pages + one page per table + Geography / Payments / Delivery / Sellers only when matching columns exist |
+| Overview | KPI cards per measure, monthly trend, up to 8 breakdowns that reconcile to the total |
+| Analytics | Any measure, daily / weekly / monthly trend, breakdowns |
+| Table pages | Row count, column profile, KPIs, trend, breakdowns per table |
+| Geography / Payments / Delivery / Sellers | Breakdowns by the matching columns (cross-table only along confirmed N:1 relationships) |
+| Data Quality | Live checks: keys, FK orphans, negative values, future dates, missing values, join safety |
+| Anomalies | MAD z-score, STL, IQR slices, IsolationForest with the Olist severity calibration; generic known-event candidates |
+| Customers / Products | Olist-only pages (explained; use the table pages) |
+| Anomalies → **Explain** | Root-cause waterfall: which groups drove the spike/drop, volume vs value ([docs/anomaly_explain.md](docs/anomaly_explain.md)) |
+| **Forecast** | Baseline ETS forecast, 80% / 95% bands, backtest vs naive, refuses noisy series ([docs/forecasting.md](docs/forecasting.md)) |
+| **Report** | One-click report (summary, KPIs, trend, breakdowns, anomaly drivers, forecast, data quality) with PDF download ([docs/report.md](docs/report.md)) |
+
+### 📈 Forecast: click-path (works for the Olist demo and uploaded datasets)
+
+1. Pick a dataset in the header switcher (e.g. **Olist demo**).
+2. Sidebar → **Forecast** (below Anomalies).
+3. Choose a **metric** (SUM / COUNT measures only), a **horizon** (1-6 months, default 3) and optionally tick
+   **Exclude flagged anomaly days**.
+4. Read the **reliability badge** (Good / Fair / Weak), **backtest MAPE vs naive**, the model and training window,
+   the chart (actuals, dashed forecast, 80% and lighter 95% bands) and the lower / expected / upper table.
+5. Noisy or short series are **refused with a reason** instead of showing numbers.
+
+API: `GET /api/forecast?metric=&horizon=&exclude_anomalies=` and
+`GET /api/datasets/{id}/forecast?...` (header `X-Owner-Token`).
+
+### 🧾 Three deterministic features in plain words
+
+- **Explain this anomaly.** Click **Explain** on any anomaly row. A waterfall shows which groups (category, state,
+  seller, payment type, or your dataset's own columns) added or removed how much, from the expected value to what
+  actually happened. A volume-vs-value card says whether it was more orders or bigger orders.
+- **Forecast.** A cautious 1–6 month baseline with 80% / 95% bands. It tests itself on the last 3 months, labels its
+  reliability, and refuses noisy or short series instead of guessing.
+- **Report.** Sidebar → **Report**, or **Generate report** on Overview or after an upload, gives a one-click summary
+  of everything above. It's shown on screen and as an A4 PDF, and its numbers are identical to the other pages.
+
+No AI writes any number or sentence in these features. Viva questions and answers:
+[docs/viva_preparation.md](docs/viva_preparation.md) (sections 8–10).
 
 ---
 
@@ -263,9 +314,11 @@ RATE_LIMIT_AI_ASK=30/minute
 
 Provision Database, Schema, Views, and Read-Only Role:
 ```bash
-psql -h localhost -U postgres -d insightforge -f database/schema.sql
-psql -h localhost -U postgres -d insightforge -f database/views.sql
-psql -h localhost -U postgres -d insightforge -f database/roles.sql
+psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f database/schema.sql
+psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f database/views.sql
+psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f database/migrations/001_create_datasets_metadata.sql
+psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f database/migrations/002_create_dataset_semantic.sql
+psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f database/roles.sql   # run LAST: locks admin tables away from insightforge_ro
 python database/seed.py
 ```
 
@@ -308,17 +361,17 @@ npm run dev
 InsightForge includes isolated verification suites with clearly defined execution modes:
 
 ```bash
-# 1. Deterministic Unit Tests (100+ tests, runs offline with USE_FIXTURES=1)
+# 1. Deterministic Unit Tests (277 tests, runs offline with USE_FIXTURES=1)
 python -m unittest discover -s backend/tests
 
 # 2. Mathematical Analytical Invariants Test Suite (8 tests)
 python database/test_analytics.py
 
-# 3. Live Database Integration Tests (Requires real seeded PostgreSQL; skips if unseeded)
+# 3. Live Database Integration Tests (25 tests; requires real seeded PostgreSQL; skips if unseeded)
 python -m unittest discover -s backend/tests_integration
 
 # 4. AI Evaluation Benchmark
-python backend/evals/run_eval.py --mode heuristic          # Canonical benchmark (63 test cases)
+python backend/evals/run_eval.py --mode heuristic          # Canonical benchmark (83 intent test cases)
 python backend/evals/run_eval.py --mode heuristic --live   # Evaluates evidence against live PostgreSQL
 python backend/evals/run_eval.py --mode sql                # Evaluates dynamic Text-to-SQL against live PostgreSQL & Gemini API (30 cases)
 
@@ -379,4 +432,4 @@ cd frontend; npx tsc --noEmit; npm run build
 ## 📄 License & Credits
 
 Developed by **Rajeev Karakoti**, **Priyanshu Saklani**, **Prasanna Godiyal** for the B.Tech Major Project.  
-Powered by PostgreSQL 16, FastAPI, React 18, TailwindCSS, and Google Gemini API.
+Powered by PostgreSQL 15+, FastAPI, React 18, TailwindCSS, and Google Gemini API.

@@ -1,3 +1,4 @@
+import { formatCompact, formatMoney, formatNumber } from '../lib/format';
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -37,7 +38,7 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
   }));
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs min-w-0 card-lift animate-fade-in-up">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-bold text-slate-900 tracking-tight">Revenue Trend</h2>
@@ -55,13 +56,14 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-            <XAxis dataKey="displayMonth" stroke="#64748B" fontSize={11} tickLine={false} />
+            <XAxis dataKey="displayMonth" stroke="#64748B" fontSize={10} tickLine={false} minTickGap={12} />
             <YAxis
               yAxisId="left"
               stroke="#4F46E5"
               fontSize={11}
               tickLine={false}
-              tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+              width={64}
+              tickFormatter={(v) => formatCompact(Number(v), 'R$')}
             />
             <YAxis
               yAxisId="right"
@@ -69,7 +71,8 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
               stroke="#94A3B8"
               fontSize={11}
               tickLine={false}
-              tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`}
+              width={40}
+              tickFormatter={(v) => formatCompact(Number(v))}
             />
             <Tooltip
               contentStyle={{
@@ -81,8 +84,8 @@ export const RevenueTrendChart: React.FC<RevenueTrendChartProps> = ({
                 fontSize: '12px'
               }}
               formatter={(val: any, name: string) => {
-                if (name === 'Gross Revenue') return [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, name];
-                if (name === 'Delivered Orders') return [`${Number(val).toLocaleString()} orders`, name];
+                if (name === 'Gross Revenue') return [formatMoney(Number(val), 'R$'), name];
+                if (name === 'Delivered Orders') return [`${formatNumber(Number(val))} orders`, name];
                 return [val, name];
               }}
             />

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from sqlalchemy import text
@@ -30,6 +31,26 @@ try:
 except ImportError:
     genai = None
     types = None
+
+
+# Original keywords (unchanged behaviour) -> AVG
+_AVG_KEYWORDS_ORIGINAL = ["rate", "avg", "score", "percentage", "pct", "ratio", "duration", "delay", "marks"]
+# Added keywords -> AVG ("rating" is not matched by "rate"; summing ratings/days/percents/unit prices is meaningless)
+_AVG_KEYWORDS_ADDED = ["rating", "days", "percent", "unit_price"]
+# Genuine totals stay SUM even if an added keyword also appears (e.g. total_days).
+# Matched as whole name tokens, so "discount_percent" is not caught by "count".
+_SUM_GUARD_TOKENS = {"total", "amount", "revenue", "sales", "quantity", "qty", "count"}
+
+
+def pick_default_aggregation(column_name: str) -> str:
+    """Default aggregation for an auto-drafted measure: 'AVG' or 'SUM'."""
+    c_lower = column_name.lower()
+    if any(k in c_lower for k in _AVG_KEYWORDS_ORIGINAL):
+        return "AVG"
+    tokens = set(re.split(r"[^a-z0-9]+", c_lower))
+    if any(k in c_lower for k in _AVG_KEYWORDS_ADDED) and not (tokens & _SUM_GUARD_TOKENS):
+        return "AVG"
+    return "SUM"
 
 
 class DatasetSemanticService:
@@ -71,7 +92,8 @@ class DatasetSemanticService:
     def generate_draft(
         cls,
         dataset_id: str,
-        owner_token: Optional[str] = None
+        owner_token: Optional[str] = None,
+        allow_llm: bool = True
     ) -> DatasetSemanticResponse:
         """
         Builds a deterministic semantic layer draft from dataset profile,
@@ -130,12 +152,8 @@ class DatasetSemanticService:
                 is_measure_role = (role == "measure")
 
                 if (is_measure_role or is_numeric_type) and not (is_id_like and not is_measure_role):
-                    # Pick aggregation: AVG for score/rate/pct/ratio/duration, else SUM
-                    c_lower = c_name.lower()
-                    if any(k in c_lower for k in ["rate", "avg", "score", "percentage", "pct", "ratio", "duration", "delay", "marks"]):
-                        agg = "AVG"
-                    else:
-                        agg = "SUM"
+                    # Pick aggregation: AVG for score/rate/rating/pct/days/unit price..., else SUM
+                    agg = pick_default_aggregation(c_name)
 
                     measures.append(MeasureDefinition(
                         name=c_name.replace("_", " ").title(),
@@ -175,7 +193,8 @@ class DatasetSemanticService:
         starter_questions = cls._generate_starter_questions(measures, dimensions, time_columns, profile.tables)
 
         # 4. Optional Schema-Only Gemini Enrichment
-        if not is_fixture_mode() and settings.GEMINI_API_KEY and genai:
+        # allow_llm=False: dataset pages (overview/analytics/...) must stay deterministic.
+        if allow_llm and not is_fixture_mode() and settings.GEMINI_API_KEY and genai:
             try:
                 cls._enrich_schema_with_gemini(
                     profile=profile,
@@ -385,7 +404,8 @@ Respond ONLY with a JSON object in this format:
     def get_semantic(
         cls,
         dataset_id: str,
-        owner_token: Optional[str] = None
+        owner_token: Optional[str] = None,
+        allow_llm: bool = True
     ) -> DatasetSemanticResponse:
         """Retrieves semantic layer for dataset, generating draft if not exists."""
         cls._ensure_table()
@@ -394,7 +414,7 @@ Respond ONLY with a JSON object in this format:
 
         if is_fixture_mode():
             # Deterministic draft in fixture mode
-            return cls.generate_draft(dataset_id, owner_token=owner_token)
+            return cls.generate_draft(dataset_id, owner_token=owner_token, allow_llm=allow_llm)
 
         with engine.connect() as conn:
             row = conn.execute(
@@ -404,7 +424,7 @@ Respond ONLY with a JSON object in this format:
 
         if not row:
             # Generate draft
-            return cls.generate_draft(dataset_id, owner_token=owner_token)
+            return cls.generate_draft(dataset_id, owner_token=owner_token, allow_llm=allow_llm)
 
         sem_model_raw = row.semantic_model
         if isinstance(sem_model_raw, str):

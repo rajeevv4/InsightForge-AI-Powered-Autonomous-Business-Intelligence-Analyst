@@ -1,5 +1,9 @@
+import copy
 import logging
+import os
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Dict, Any, List
 from sqlalchemy import text
@@ -13,11 +17,35 @@ from backend.app.fixture_guard import assert_database_available
 
 logger = logging.getLogger(__name__)
 
+DQ_CACHE_TTL_SECONDS = int(os.getenv("DQ_CACHE_TTL_SECONDS", "600"))
+_cache: Dict[str, Any] = {"data": None, "at": 0.0}
+# Lock also coalesces concurrent cold requests (StrictMode double-fetch, AI router) into one audit run.
+_cache_lock = threading.Lock()
+
 
 class DataQualityService:
 
     @staticmethod
     def fetch_audit_summary() -> Dict[str, Any]:
+        """
+        Returns the audit summary, cached in-process for DQ_CACHE_TTL_SECONDS.
+        The audit runs ~30 sequential full-table queries; against a remote database
+        (e.g. Supabase) that takes ~13s, close to the frontend's 15s axios timeout,
+        while the underlying data only changes on re-seed.
+        """
+        from backend.app.fixture_guard import is_fixture_mode_allowed
+        if is_fixture_mode_allowed():
+            return DataQualityService._compute_audit_summary()
+        now = time.monotonic()
+        with _cache_lock:
+            if _cache["data"] is not None and now - _cache["at"] < DQ_CACHE_TTL_SECONDS:
+                return copy.deepcopy(_cache["data"])
+            data = DataQualityService._compute_audit_summary()  # raises on DB failure -> not cached
+            _cache["data"], _cache["at"] = data, time.monotonic()
+            return copy.deepcopy(data)
+
+    @staticmethod
+    def _compute_audit_summary() -> Dict[str, Any]:
         from backend.app.fixture_guard import is_fixture_mode_allowed
         if is_fixture_mode_allowed():
             return {

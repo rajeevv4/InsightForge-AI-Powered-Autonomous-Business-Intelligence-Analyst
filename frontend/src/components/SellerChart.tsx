@@ -1,3 +1,4 @@
+import { formatMoney } from '../lib/format';
 import React from 'react';
 import { SellerItem } from '../types/api';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -56,7 +57,7 @@ export const SellerChart: React.FC<SellerChartProps> = ({
                   {seller.unique_products_offered}
                 </td>
                 <td className="py-3 px-2 text-right font-bold text-slate-900">
-                  R$ {seller.total_sales_revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {formatMoney(seller.total_sales_revenue, 'R$')}
                 </td>
                 <td className="py-3 px-2 text-right text-amber-600 font-medium">
                   {seller.avg_seller_review_score ? `${seller.avg_seller_review_score.toFixed(2)} ★` : 'N/A'}

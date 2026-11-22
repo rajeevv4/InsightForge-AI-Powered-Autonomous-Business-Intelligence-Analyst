@@ -41,6 +41,14 @@ class AIAuditService:
                     );
                     CREATE INDEX IF NOT EXISTS idx_ai_audit_log_timestamp
                         ON {settings.DB_SCHEMA}.ai_audit_log (timestamp DESC);
+                    -- Default privileges grant SELECT on new tables to the read-only
+                    -- Text-to-SQL role; the audit log must never be readable by it.
+                    DO $$
+                    BEGIN
+                        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'insightforge_ro') THEN
+                            REVOKE ALL ON {settings.DB_SCHEMA}.ai_audit_log FROM insightforge_ro;
+                        END IF;
+                    END $$;
                 """))
                 conn.commit()
                 _table_initialized = True

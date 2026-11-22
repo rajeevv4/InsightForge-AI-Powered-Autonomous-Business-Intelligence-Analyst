@@ -1,3 +1,4 @@
+import { formatCompact, formatMoney } from '../lib/format';
 import React, { useEffect, useState, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
@@ -26,6 +27,9 @@ import {
 import { api } from '../services/api';
 import { AnomalyItem, AnomalyListResponse, AnomalyScanResponse } from '../types/api';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { AnomalyExplainDrawer, ExplainButton, ExplainTarget } from '../components/AnomalyExplainDrawer';
+import { InfoTip } from '../components/ui';
+import { useUi } from '../contexts/UiContext';
 
 export const AnomaliesPage: React.FC = () => {
   const outletContext = useOutletContext<{ refreshTrigger?: number }>();
@@ -38,6 +42,7 @@ export const AnomaliesPage: React.FC = () => {
   // Data states
   const [anomalyData, setAnomalyData] = useState<AnomalyListResponse | null>(null);
   const [scanResult, setScanResult] = useState<AnomalyScanResponse | null>(null);
+  const [explainTarget, setExplainTarget] = useState<ExplainTarget | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [scanning, setScanning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,11 +68,13 @@ export const AnomaliesPage: React.FC = () => {
     loadAnomalies();
   }, [loadAnomalies, outletContext?.refreshTrigger]);
 
+  const { toast } = useUi();
   const handleRunScan = async () => {
     setScanning(true);
     try {
       const res = await api.scanAnomalies({ grain });
       setScanResult(res);
+      toast('success', 'Scan complete', `${res.anomalies_detected ?? 0} anomalies (${res.high_severity_count ?? 0} high severity).`);
       await loadAnomalies();
     } catch (err: any) {
       console.error('Anomaly scan failed:', err);
@@ -76,6 +83,7 @@ export const AnomaliesPage: React.FC = () => {
         : (err?.response?.status === 503
           ? 'Database unavailable: Cannot run scan without an active database connection.'
           : 'Failed to complete full anomaly scan.');
+      toast('error', 'Scan failed', msg);
       alert(msg);
     } finally {
       setScanning(false);
@@ -84,7 +92,7 @@ export const AnomaliesPage: React.FC = () => {
 
   const formatValue = (val: number, met: string) => {
     if (met === 'gross_revenue' || met === 'aov') {
-      return `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return formatMoney(val, 'R$');
     }
     if (met === 'on_time_delivery_rate') {
       return `${val.toFixed(1)}%`;
@@ -171,7 +179,7 @@ export const AnomaliesPage: React.FC = () => {
           <div className="flex items-center space-x-2">
             <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
-              <strong>Scan Complete:</strong> Analyzed {scanResult.metrics_analyzed.length} metrics ({scanResult.grain}). Detected {scanResult.total_anomalies_detected} total anomalies.
+              <strong>Scan Complete:</strong> Analyzed {scanResult.scanned_metrics?.length ?? 0} metrics ({grain}). Detected {scanResult.anomalies_detected ?? 0} total anomalies ({scanResult.high_severity_count ?? 0} high severity).
             </span>
           </div>
           <button
@@ -231,7 +239,7 @@ export const AnomaliesPage: React.FC = () => {
           </div>
           <div className="mt-2">
             <span className="text-xs font-semibold text-slate-700">Deterministic ML</span>
-            <p className="text-2xs text-slate-400 mt-0.5">STL, MAD Z-Score, IQR, IF</p>
+            <p className="text-2xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-x-1.5">STL <InfoTip term="STL" /> · MAD Z-Score <InfoTip term="MAD" /> · IQR <InfoTip term="IQR" /> · IF</p>
           </div>
         </div>
       </div>
@@ -350,9 +358,10 @@ export const AnomaliesPage: React.FC = () => {
                 <YAxis
                   stroke="#94a3b8"
                   fontSize={10}
+                  width={64}
                   tickLine={false}
                   tickFormatter={(val) => {
-                    if (metric === 'gross_revenue') return `R$ ${(val / 1000).toFixed(0)}k`;
+                    if (metric === 'gross_revenue') return formatCompact(val, 'R$');
                     if (metric === 'on_time_delivery_rate') return `${val}%`;
                     return val.toLocaleString();
                   }}
@@ -428,7 +437,7 @@ export const AnomaliesPage: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[56rem]">
             <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200/60 uppercase tracking-wider text-2xs">
               <tr>
                 <th className="py-3 px-4">Period</th>
@@ -440,18 +449,19 @@ export const AnomaliesPage: React.FC = () => {
                 <th className="py-3 px-4">Severity</th>
                 <th className="py-3 px-4">Method</th>
                 <th className="py-3 px-4">Known Event Candidate</th>
+                <th className="py-3 px-4">Why?</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
                     Loading anomaly table...
                   </td>
                 </tr>
               ) : displayedAnomalies.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
                     No anomalies detected matching the current criteria.
                   </td>
                 </tr>
@@ -500,6 +510,11 @@ export const AnomaliesPage: React.FC = () => {
                           <span className="text-slate-400 text-2xs">—</span>
                         )}
                       </td>
+                      <td className="py-3 px-4">
+                        {item.dimension === 'overall' && (
+                          <ExplainButton onClick={() => setExplainTarget({ source: { kind: 'olist' }, metric, period: item.period, grain })} />
+                        )}
+                      </td>
                     </tr>
                   );
                 })
@@ -508,6 +523,7 @@ export const AnomaliesPage: React.FC = () => {
           </table>
         </div>
       </div>
+      <AnomalyExplainDrawer target={explainTarget} onClose={() => setExplainTarget(null)} />
     </div>
   );
 };

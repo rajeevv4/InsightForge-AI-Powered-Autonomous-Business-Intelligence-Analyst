@@ -43,6 +43,48 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
 
 
+def _normalize_parser_warning(w: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parser warnings are {"column", "warning"}; profiler findings (and the frontend's
+    QualityFinding type) are {"type", "column", "message", "severity"}. Convert so every
+    stored finding has the same shape (the UI calls f.type.replace(...) on each one).
+    """
+    if "type" in w and "message" in w:
+        return w
+    message = w.get("warning") or w.get("message") or ""
+    lowered = message.lower()
+    if "ambiguous date" in lowered:
+        ftype, severity = "ambiguous_date_format", "medium"
+    elif "formula injection" in lowered:
+        ftype, severity = "formula_injection_neutralized", "high"
+    else:
+        ftype, severity = "parser_warning", "low"
+    out = {"type": ftype, "column": w.get("column"), "message": message, "severity": severity}
+    out["warning"] = message  # keep legacy key for existing consumers
+    return out
+
+
+def _exec_in_savepoint(cur, statements) -> bool:
+    """
+    Runs one or more statements inside a SAVEPOINT on a psycopg2 cursor.
+    On failure only the savepoint is rolled back, so the enclosing transaction stays
+    usable (a bare try/except would leave it aborted and every later statement failing).
+    Returns True on success, False if the statements were rolled back.
+    """
+    if not isinstance(statements, (list, tuple)):
+        statements = [statements]
+    cur.execute("SAVEPOINT if_optional_step;")
+    try:
+        for stmt in statements:
+            cur.execute(stmt)
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT if_optional_step;")
+        logger.debug(f"Optional step rolled back: {e}")
+        return False
+    cur.execute("RELEASE SAVEPOINT if_optional_step;")
+    return True
+
+
 class DatasetService:
     """
     Manages multi-tenant dataset workspace: safe upload, COPY ingestion,
@@ -111,7 +153,8 @@ class DatasetService:
                       AND timestamp > NOW() - INTERVAL '24 hours'
                       AND success = true;
                 """),
-                {"pattern": f"%ip: {client_ip}%"}
+                # Anchor on the closing "]" so 1.2.3.4 does not also match 1.2.3.45
+                {"pattern": f"%ip: {client_ip}]"}
             ).scalar()
         return cnt or 0
 
@@ -213,7 +256,7 @@ class DatasetService:
                     share_samples=False
                 )
                 if warnings:
-                    tbl_profile.quality_findings.extend(warnings)
+                    tbl_profile.quality_findings.extend(_normalize_parser_warning(w) for w in warnings)
 
                 parsed_tables[safe_tbl] = (df, tbl_profile, col_mapping)
             finally:
@@ -236,13 +279,15 @@ class DatasetService:
 
                 # Defense-in-depth: dedicated NOLOGIN role for this dataset schema
                 role_name = f"dsr_{schema_name[3:]}" if schema_name.startswith("ds_") else f"dsr_{dataset_hex}"
-                try:
-                    cur.execute(sql.SQL("CREATE ROLE {} NOLOGIN;").format(sql.Identifier(role_name)))
-                    cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
-                    cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
-                    cur.execute(sql.SQL("GRANT {} TO insightforge_ro;").format(sql.Identifier(role_name)))
-                except Exception as e:
-                    logger.warning(f"Could not create defense-in-depth role {role_name}: {e}")
+                # SAVEPOINT so a role failure cannot abort the whole ingestion transaction.
+                role_ok = _exec_in_savepoint(cur, [
+                    sql.SQL("CREATE ROLE {} NOLOGIN;").format(sql.Identifier(role_name)),
+                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)),
+                    sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)),
+                    sql.SQL("GRANT {} TO insightforge_ro;").format(sql.Identifier(role_name)),
+                ])
+                if not role_ok:
+                    logger.warning(f"Could not create defense-in-depth role {role_name}")
 
                 total_rows_inserted = 0
 
@@ -278,14 +323,12 @@ class DatasetService:
                         sql.Identifier(schema_name),
                         sql.Identifier(safe_tbl)
                     ))
-                    try:
+                    if role_ok:
                         cur.execute(sql.SQL("GRANT SELECT ON {}.{} TO {};").format(
                             sql.Identifier(schema_name),
                             sql.Identifier(safe_tbl),
                             sql.Identifier(role_name)
                         ))
-                    except Exception:
-                        pass
                     total_rows_inserted += len(df)
 
                 # C. Save Metadata
@@ -396,9 +439,10 @@ class DatasetService:
         # Log upload metadata to audit log
         try:
             ip_info = f", ip: {client_ip}" if client_ip else ""
-            AIAuditService.log_interaction(
+            AIAuditService.log(
                 question=f"[dataset_upload: {clean_dataset_name}, tables: {len(parsed_tables)}, rows: {total_rows_inserted}, schema: {schema_name}{ip_info}]",
                 intent="dataset_upload",
+                generated_sql=None,
                 latency_ms=100.0,
                 success=True
             )
@@ -491,7 +535,8 @@ class DatasetService:
             ).fetchall()
 
             rel_rows = conn.execute(
-                text("SELECT * FROM insightforge.dataset_relationships WHERE dataset_id = :id;"),
+                text("SELECT * FROM insightforge.dataset_relationships WHERE dataset_id = :id "
+                     "ORDER BY confidence DESC, parent_table, parent_column, child_table, child_column;"),
                 {"id": ds_row.id}
             ).fetchall()
 
@@ -873,37 +918,36 @@ class DatasetService:
 
         schema_name = ds_row.schema_name
 
-        # 1. Drop schema CASCADE with admin raw connection and drop defense-in-depth role
+        # 1. Drop schema CASCADE with admin raw connection and drop defense-in-depth role.
+        #    Optional role cleanup runs inside SAVEPOINTs: in PostgreSQL any failed statement
+        #    aborts the whole transaction, which previously turned the commit into a silent
+        #    rollback (schema, metadata row and role all survived a "successful" delete).
         raw_conn = engine.raw_connection()
         try:
             with raw_conn.cursor() as cur:
+                role_name = f"dsr_{schema_name[3:]}" if schema_name.startswith("ds_") else None
+                if role_name:
+                    _exec_in_savepoint(cur, sql.SQL("REVOKE {} FROM insightforge_ro;").format(sql.Identifier(role_name)))
+
+                # DROP SCHEMA CASCADE also removes every ACL entry the role held in it.
                 cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE;").format(sql.Identifier(schema_name)))
                 cur.execute("DELETE FROM insightforge.datasets WHERE id = %s;", (dataset_id,))
 
-                # Drop defense-in-depth role
-                if schema_name.startswith("ds_"):
-                    role_name = f"dsr_{schema_name[3:]}"
-                    try:
-                        cur.execute(sql.SQL("REVOKE ALL ON SCHEMA {} FROM {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
-                    except Exception:
-                        pass
-                    try:
-                        cur.execute(sql.SQL("REVOKE {} FROM insightforge_ro;").format(sql.Identifier(role_name)))
-                    except Exception:
-                        pass
-                    try:
-                        cur.execute(sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name)))
-                    except Exception as e:
-                        logger.debug(f"Could not drop role {role_name}: {e}")
+                if role_name:
+                    _exec_in_savepoint(cur, sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name)))
             raw_conn.commit()
+        except Exception:
+            raw_conn.rollback()
+            raise
         finally:
             raw_conn.close()
 
         # Audit log delete
         try:
-            AIAuditService.log_interaction(
+            AIAuditService.log(
                 question=f"[dataset_delete: id: {dataset_id}, schema: {schema_name}]",
                 intent="dataset_delete",
+                generated_sql=None,
                 latency_ms=50.0,
                 success=True
             )

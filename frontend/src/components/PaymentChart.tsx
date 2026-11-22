@@ -1,3 +1,4 @@
+import { formatMoney } from '../lib/format';
 import React from 'react';
 import {
   ResponsiveContainer,
@@ -37,7 +38,7 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
   }));
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs min-w-0 card-lift animate-fade-in-up">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-bold text-slate-900 tracking-tight">Payment Method Distribution</h2>
@@ -52,8 +53,8 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
               data={formattedData}
               cx="50%"
               cy="50%"
-              innerRadius={60}
-              outerRadius={95}
+              innerRadius="52%"
+              outerRadius="80%"
               paddingAngle={4}
               dataKey="value"
             >
@@ -70,7 +71,7 @@ export const PaymentChart: React.FC<PaymentChartProps> = ({
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
                 fontSize: '12px'
               }}
-              formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Total Value']}
+              formatter={(val: any) => [formatMoney(Number(val), 'R$'), 'Total Value']}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
           </PieChart>

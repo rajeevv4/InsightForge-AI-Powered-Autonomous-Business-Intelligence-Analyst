@@ -230,8 +230,13 @@ class DatasetProfiler:
                 parent_keys = [c.safe_name for c in parent_prof.columns if c.role == "id" or c.safe_name == parent_prof.candidate_pk]
 
                 for p_col in parent_keys:
-                    p_values = set(parent_df[p_col].dropna().astype(str).tolist())
+                    p_non_null = parent_df[p_col].dropna().astype(str)
+                    p_values = set(p_non_null.tolist())
                     if len(p_values) == 0:
+                        continue
+                    # The parent side of an FK must be unique; an id-named column that repeats
+                    # (e.g. orders.customer_id) is itself a foreign key, not a referenced key.
+                    if len(p_values) != len(p_non_null):
                         continue
 
                     for c_col in child_df.columns:

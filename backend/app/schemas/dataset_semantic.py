@@ -108,3 +108,81 @@ class DatasetInsightsResponse(BaseModel):
     top_n: Optional[InsightChartSpec] = None
     distribution: Optional[InsightChartSpec] = None
     anomalies: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Dataset Dashboard (uploaded datasets only; deterministic, no LLM)
+# ---------------------------------------------------------------------------
+
+class DashboardKPI(BaseModel):
+    label: str
+    table: str
+    column: Optional[str] = Field(None, description="None for row-count KPIs")
+    aggregation: str = Field(description="COUNT | SUM | AVG | MIN | MAX")
+    value: Optional[float] = None
+    error: Optional[str] = Field(None, description="Short reason if this KPI could not be computed")
+
+
+class DashboardTrend(BaseModel):
+    title: str
+    table: str
+    measure_column: str
+    measure_label: str
+    aggregation: str
+    time_column: str
+    points: List[Dict[str, Any]] = Field(default_factory=list, description="[{period: 'YYYY-MM-DD', value: number}] monthly")
+
+
+class DashboardBreakdownItem(BaseModel):
+    label: str
+    value: Optional[float] = None
+    row_count: int = 0
+
+
+class DashboardBreakdown(BaseModel):
+    title: str
+    dimension_table: str
+    dimension_column: str
+    dimension_label: str
+    measure_label: str
+    aggregation: str
+    join_path: Optional[str] = Field(None, description="e.g. 'orders.customer_id -> customers.customer_id (N:1)'; None if same table")
+    items: List[DashboardBreakdownItem] = Field(default_factory=list, description="Top values, largest first")
+    other_value: Optional[float] = Field(None, description="SUM of all remaining groups (SUM measures only)")
+    other_groups: int = 0
+    total_value: Optional[float] = Field(None, description="SUM over all groups incl. blanks (SUM measures only)")
+    truncated: bool = False
+
+
+class DashboardSkippedBreakdown(BaseModel):
+    dimension: str = Field(description="table.column")
+    reason: str
+
+
+class DashboardQualityTable(BaseModel):
+    table: str
+    row_count: int
+    findings: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class DashboardAnomalies(BaseModel):
+    measure_label: Optional[str] = None
+    method: str = "rolling_mad_zscore"
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    note: Optional[str] = None
+
+
+class DatasetDashboardResponse(BaseModel):
+    dataset_id: str
+    dataset_name: str
+    primary_measure: Optional[str] = Field(None, description="table.column used for trend/breakdowns")
+    kpis: Optional[List[DashboardKPI]] = None
+    trend: Optional[DashboardTrend] = None
+    breakdowns: Optional[List[DashboardBreakdown]] = None
+    skipped_breakdowns: List[DashboardSkippedBreakdown] = Field(default_factory=list)
+    data_quality: Optional[List[DashboardQualityTable]] = None
+    anomalies: Optional[DashboardAnomalies] = None
+    section_errors: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Section name -> short reason when that section is null/unavailable"
+    )
