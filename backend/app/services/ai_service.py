@@ -194,9 +194,10 @@ class AIService:
 
         # 7. Revenue Trend
         if any(cls._wb(w, q) for w in [
-            "trend", "monthly", "month over month", "mom", "revenue growth", "over time", "trajectory", "seasonal",
-            "रुझान", "मासिक", "मासिक वृद्धि", "महीने दर महीने", "बिक्री रुझान",
-            "masik", "mahine dar mahine", "sales trend", "growth rate"
+            "trend", "monthly", "month", "months", "month over month", "mom", "revenue growth", "over time", "trajectory", "seasonal",
+            "peak month", "peak sales", "highest month", "lowest month", "peak aaya",
+            "रुझान", "मासिक", "माह", "महीना", "महीने", "मासिक वृद्धि", "महीने दर महीने", "बिक्री रुझान", "शीर्ष महीना",
+            "masik", "mahina", "mahine", "mahine dar mahine", "sales trend", "growth rate", "peak", "kaun se mahine"
         ]):
             return {"intent": "revenue_trend", "confidence": 0.95, "reason": "Question inquires about monthly revenue or order trends."}
 

@@ -41,7 +41,7 @@ const client = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: 45000,
 });
 
 export const api = {
@@ -91,12 +91,12 @@ export const api = {
   },
 
   askAI: async (question: string): Promise<AskAIResponse> => {
-    const res = await client.post<AskAIResponse>('/ai/ask', { question });
+    const res = await client.post<AskAIResponse>('/ai/ask', { question }, { timeout: 60000 });
     return res.data;
   },
 
   sqlAskAI: async (question: string): Promise<SQLAskResponse> => {
-    const res = await client.post<SQLAskResponse>('/ai/sql-ask', { question });
+    const res = await client.post<SQLAskResponse>('/ai/sql-ask', { question }, { timeout: 60000 });
     return res.data;
   },
 
@@ -110,7 +110,7 @@ export const api = {
   },
 
   scanAnomalies: async (params?: AnomalyScanRequest): Promise<AnomalyScanResponse> => {
-    const res = await client.post<AnomalyScanResponse>('/anomalies/scan', params || {});
+    const res = await client.post<AnomalyScanResponse>('/anomalies/scan', params || {}, { timeout: 60000 });
     return res.data;
   },
 

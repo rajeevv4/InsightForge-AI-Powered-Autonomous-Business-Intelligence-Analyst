@@ -387,11 +387,14 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         client = AIService._get_genai_client()
         language = detect_language(question)
 
-        # Step 1: Intent classification check
-        if client:
+        # Step 1: Fast Heuristic Intent Check (sub-millisecond deterministic lookup)
+        fast_classification = AIService.classify_intent_heuristic(question)
+        if fast_classification.get("confidence", 0.0) >= 0.85:
+            classification = fast_classification
+        elif client:
             classification = AIService.classify_intent_gemini(client, question)
         else:
-            classification = AIService.classify_intent_heuristic(question)
+            classification = fast_classification
 
         intent = classification.get("intent", "unknown")
         confidence = float(classification.get("confidence", 0.0))
