@@ -264,10 +264,81 @@ export const AskInsightForge: React.FC = () => {
   const startRecording = async () => {
     setVoiceNotice(null);
     setError(null);
-    webSpeechTranscriptRef.current = '';
 
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    // 1. Primary path: Browser Web Speech API (zero server quota, live real-time transcription)
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+
+        recognition.onstart = () => {
+          setIsRecording(true);
+          setRecordingSeconds(0);
+          setVoiceNotice(
+            `Listening in ${selectedLanguage === 'hi' ? 'Hindi (हिन्दी)' : 'English'}... Speak into your microphone.`
+          );
+        };
+
+        recognition.onresult = (event: any) => {
+          let fullStr = '';
+          for (let i = 0; i < event.results.length; i++) {
+            fullStr += event.results[i][0].transcript + ' ';
+          }
+          const clean = fullStr.trim();
+          if (clean) {
+            setQuestion(clean);
+          }
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('SpeechRecognition error:', event.error);
+          if (event.error === 'not-allowed') {
+            setVoiceNotice('Microphone access was denied. Please allow microphone permissions in your browser.');
+            setIsRecording(false);
+          } else if (event.error !== 'no-speech') {
+            startMediaRecorderFallback();
+          }
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+          if (timerIntervalRef.current) {
+            window.clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+
+        timerIntervalRef.current = window.setInterval(() => {
+          setRecordingSeconds((prev) => {
+            if (prev >= 59) {
+              stopRecording();
+              return 60;
+            }
+            return prev + 1;
+          });
+        }, 1000);
+
+        return;
+      } catch (err: any) {
+        console.warn('SpeechRecognition start failed, falling back to MediaRecorder:', err);
+      }
+    }
+
+    // 2. Secondary path: MediaRecorder + Backend API
+    startMediaRecorderFallback();
+  };
+
+  const startMediaRecorderFallback = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      triggerActiveBrowserSpeech();
+      setVoiceNotice('Voice input is unavailable in this browser. Please type your question.');
+      setIsRecording(false);
       return;
     }
 
@@ -289,29 +360,6 @@ export const AskInsightForge: React.FC = () => {
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
-      // Start Web Speech in parallel as resilient fallback
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = false;
-          recognition.lang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
-          recognition.onresult = (e: any) => {
-            let str = '';
-            for (let i = 0; i < e.results.length; i++) {
-              str += e.results[i][0].transcript + ' ';
-            }
-            webSpeechTranscriptRef.current = str.trim();
-          };
-          recognition.onerror = () => {};
-          recognition.start();
-          recognitionRef.current = recognition;
-        } catch (e) {
-          recognitionRef.current = null;
-        }
-      }
-
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
@@ -331,11 +379,6 @@ export const AskInsightForge: React.FC = () => {
         });
 
         if (audioBlob.size < 64) {
-          if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
-            setQuestion(webSpeechTranscriptRef.current.trim());
-            setVoiceNotice('Transcribed using browser speech recognition. Review and click Ask.');
-            return;
-          }
           setVoiceNotice('Recording was too short. Please speak for at least 1-2 seconds and try again.');
           return;
         }
@@ -345,6 +388,7 @@ export const AskInsightForge: React.FC = () => {
       recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
+      setVoiceNotice('Recording audio query... Speak into your microphone.');
 
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => {
@@ -356,7 +400,8 @@ export const AskInsightForge: React.FC = () => {
         });
       }, 1000);
     } catch (err: any) {
-      triggerActiveBrowserSpeech();
+      setVoiceNotice('Microphone access was denied or unavailable. Please type your question.');
+      setIsRecording(false);
     }
   };
 
@@ -365,6 +410,7 @@ export const AskInsightForge: React.FC = () => {
       try {
         recognitionRef.current.stop();
       } catch (e) {}
+      recognitionRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
@@ -375,52 +421,26 @@ export const AskInsightForge: React.FC = () => {
       } catch (e) {
         console.error('Error stopping MediaRecorder:', e);
       }
+      mediaRecorderRef.current = null;
     }
-  };
-
-  const triggerActiveBrowserSpeech = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceNotice('Voice unavailable, please type your question.');
-      setIsRecording(false);
-      return;
+    if (timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
+    setIsRecording(false);
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      const targetLang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
-      recognition.lang = targetLang;
-
-      setVoiceNotice(`Listening via browser speech recognition (${selectedLanguage === 'hi' ? 'Hindi' : 'English'})... Speak now.`);
-      setIsRecording(true);
-
-      recognition.onresult = (event: any) => {
-        setIsRecording(false);
-        const transcript = event.results?.[0]?.[0]?.transcript;
-        if (transcript && transcript.trim()) {
-          setQuestion(transcript.trim());
-          setVoiceNotice(`Transcribed using browser speech recognition (${selectedLanguage === 'hi' ? 'Hindi' : 'English'}). Review and click Ask.`);
+    // Finalize notice based on whether question was captured
+    setTimeout(() => {
+      setQuestion((curr) => {
+        if (curr && curr.trim()) {
+          const langLabel = selectedLanguage === 'hi' ? 'Hindi (हिन्दी)' : 'English';
+          setVoiceNotice(`Transcribed in ${langLabel}. Review your question and click Ask AI.`);
         } else {
-          setVoiceNotice('Voice unavailable, please type your question.');
+          setVoiceNotice('No speech detected. Please click the mic and speak clearly.');
         }
-      };
-
-      recognition.onerror = () => {
-        setIsRecording(false);
-        setVoiceNotice('Voice unavailable, please type your question.');
-      };
-
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognition.start();
-    } catch (e) {
-      setIsRecording(false);
-      setVoiceNotice('Voice unavailable, please type your question.');
-    }
+        return curr;
+      });
+    }, 250);
   };
 
   const processAudioTranscription = async (blob: Blob) => {
@@ -431,21 +451,12 @@ export const AskInsightForge: React.FC = () => {
       if (result.text && result.text.trim()) {
         setQuestion(result.text.trim());
         const langLabel = result.detected_language === 'hi' ? 'Hindi (हिन्दी)' : (result.detected_language === 'hinglish' ? 'Hinglish' : 'English');
-        setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask.`);
-      } else if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
-        setQuestion(webSpeechTranscriptRef.current.trim());
-        setVoiceNotice('Transcribed using browser speech recognition. Review and click Ask.');
+        setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask AI.`);
       } else {
-        setVoiceNotice('Voice unavailable, please type your question.');
+        setVoiceNotice('Voice transcription returned no text. You can type your question directly.');
       }
     } catch (err: any) {
-      // Whenever backend transcription fails (any non-200), automatically fall back to browser Web Speech API
-      if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
-        setQuestion(webSpeechTranscriptRef.current.trim());
-        setVoiceNotice('Backend voice service unavailable. Transcribed using browser speech recognition. Review and click Ask.');
-      } else {
-        triggerActiveBrowserSpeech();
-      }
+      setVoiceNotice('Backend voice service quota reached. Please type your question directly.');
     } finally {
       setIsTranscribing(false);
     }
