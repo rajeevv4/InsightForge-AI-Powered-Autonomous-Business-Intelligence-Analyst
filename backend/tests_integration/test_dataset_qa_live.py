@@ -37,7 +37,7 @@ class TestDatasetQALiveIntegration(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # Guarantee no leftover ds_* schemas exist
+        # Guarantee no leftover ds_* schemas or dsr_* roles exist
         if check_db_connection():
             with engine.connect() as conn:
                 schemas = [
@@ -46,11 +46,27 @@ class TestDatasetQALiveIntegration(unittest.TestCase):
                         text("SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'ds_%';")
                     ).fetchall()
                 ]
-                if schemas:
-                    with engine.begin() as cleanup_conn:
-                        for s in schemas:
-                            cleanup_conn.execute(text(f'DROP SCHEMA IF EXISTS "{s}" CASCADE;'))
-                            cleanup_conn.execute(text("DELETE FROM insightforge.datasets WHERE schema_name = :s;"), {"s": s})
+                roles = [
+                    row[0]
+                    for row in conn.execute(
+                        text("SELECT rolname FROM pg_roles WHERE rolname LIKE 'dsr_%';")
+                    ).fetchall()
+                ]
+            if schemas or roles:
+                with engine.begin() as cleanup_conn:
+                    for s in schemas:
+                        cleanup_conn.execute(text(f'DROP SCHEMA IF EXISTS "{s}" CASCADE;'))
+                        cleanup_conn.execute(text("DELETE FROM insightforge.datasets WHERE schema_name = :s;"), {"s": s})
+                    for r in roles:
+                        try:
+                            cleanup_conn.execute(text(f'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM "{r}";'))
+                        except Exception:
+                            pass
+                        try:
+                            cleanup_conn.execute(text(f'REVOKE "{r}" FROM insightforge_ro;'))
+                        except Exception:
+                            pass
+                        cleanup_conn.execute(text(f'DROP ROLE IF EXISTS "{r}";'))
 
     def test_01_retail_relational_qa_and_insights(self):
         """Upload retail relational dataset, generate semantic layer, test questions & insights."""
@@ -197,6 +213,77 @@ class TestDatasetQALiveIntegration(unittest.TestCase):
         real_dir = SAMPLES_DIR / "real"
         if not real_dir.exists() or not any(real_dir.iterdir()):
             self.skipTest("No files in data/samples/real/. Skipping.")
+
+    def test_05_cross_dataset_isolation_and_db_role_defense_in_depth(self):
+        """
+        Level 6.1 Security & Defense-in-Depth Live Integration Test:
+        1. Uploads two independent datasets A (retail) and B (bike sharing).
+        2. Proves that on Dataset A, queries targeting Dataset B are rejected by SQLValidator.
+        3. Proves DEFENSE IN DEPTH: even if the validator is bypassed, PostgreSQL's
+           SET LOCAL ROLE dsr_<8hex> enforces database-level permission denial.
+        4. Verifies time column profiling on bike sharing (TIMESTAMP, datetime role, candidate time column).
+        """
+        cust_path = SAMPLES_DIR / "retail_customers.csv"
+        tsv_path = SAMPLES_DIR / "bike_sharing_messy.tsv"
+
+        with open(cust_path, "rb") as f_a, open(tsv_path, "rb") as f_b:
+            data_a = [("retail_customers.csv", f_a.read())]
+            data_b = [("bike_sharing_messy.tsv", f_b.read())]
+
+        resp_a = DatasetService.upload_dataset(files_data=data_a, dataset_name="Live Dataset A")
+        resp_b = DatasetService.upload_dataset(files_data=data_b, dataset_name="Live Dataset B")
+
+        ds_id_a, token_a, schema_a = resp_a.dataset_id, resp_a.owner_token, resp_a.schema_name
+        ds_id_b, token_b, schema_b = resp_b.dataset_id, resp_b.owner_token, resp_b.schema_name
+
+        try:
+            profile_a: DatasetProfile = DatasetService.get_dataset_profile(ds_id_a, owner_token=token_a)
+            profile_b: DatasetProfile = DatasetService.get_dataset_profile(ds_id_b, owner_token=token_b)
+
+            # 1. Verify Time Column Profiling for Dataset B (bike_sharing)
+            # Before Level 6.1: rental_time was TEXT, role was dimension, candidate_time_column was None.
+            # After Level 6.1: rental_time is TIMESTAMP, role is datetime, candidate_time_column is rental_time.
+            bike_tbl = profile_b.tables[0]
+            rental_time_col = next((c for c in bike_tbl.columns if c.safe_name == "rental_time"), None)
+            self.assertIsNotNone(rental_time_col, "rental_time column not found in bike sharing")
+            self.assertEqual(rental_time_col.pg_type, "TIMESTAMP", f"Expected TIMESTAMP, got {rental_time_col.pg_type}")
+            self.assertEqual(rental_time_col.role, "datetime", f"Expected role 'datetime', got {rental_time_col.role}")
+            self.assertEqual(bike_tbl.candidate_time_column, "rental_time", f"Expected candidate_time_column 'rental_time', got {bike_tbl.candidate_time_column}")
+
+            # Verify time-trend insight runs directly on the TIMESTAMP column
+            insights_b = DatasetInsightsService.get_insights(ds_id_b, owner_token=token_b)
+            self.assertIsNotNone(insights_b.time_trend, "Expected time_trend chart to be generated")
+            self.assertGreater(len(insights_b.time_trend.data), 0, "Time trend data should not be empty")
+
+            # 2. Validator rejection of cross-dataset access
+            ctx_a = DatasetSQLContext(
+                schema_name=schema_a,
+                allowed_tables={t.safe_name for t in profile_a.tables},
+                is_demo=False
+            )
+            cross_sql = f"SELECT * FROM {schema_b}.bike_sharing_messy;"
+            is_valid, sanitized_sql, val_err = SQLValidator.validate(cross_sql, context=ctx_a)
+            self.assertFalse(is_valid, "Validator should have rejected cross-dataset query to schema B")
+            self.assertIn(f"Access to schema '{schema_b}' is forbidden", val_err)
+
+            # 3. Defense-in-Depth Database Role Isolation:
+            # Even if the validator is bypassed, PostgreSQL itself prevents dsr_a from reading schema B!
+            role_a = f"dsr_{schema_a[3:]}"
+            db_denied = False
+            try:
+                with readonly_engine.connect() as conn:
+                    with conn.begin():
+                        conn.execute(text(f'SET LOCAL ROLE "{role_a}";'))
+                        conn.execute(text(f'SELECT count(*) FROM {schema_b}.bike_sharing_messy;'))
+            except Exception as e:
+                db_denied = True
+                self.assertIn("permission denied", str(e).lower())
+
+            self.assertTrue(db_denied, "PostgreSQL failed to block cross-dataset read under dedicated role dsr_a!")
+
+        finally:
+            DatasetService.delete_dataset(ds_id_a, owner_token=token_a)
+            DatasetService.delete_dataset(ds_id_b, owner_token=token_b)
 
 
 if __name__ == "__main__":

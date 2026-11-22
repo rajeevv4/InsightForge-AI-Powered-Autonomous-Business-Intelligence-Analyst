@@ -54,10 +54,17 @@ class DatasetInsightsService:
             return []
         try:
             with readonly_engine.connect() as conn:
-                conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
-                result = conn.execute(text(sanitized_sql))
-                cols = list(result.keys())
-                rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
+                with conn.begin():
+                    if schema_name.startswith("ds_"):
+                        role_name = f"dsr_{schema_name[3:]}"
+                        try:
+                            conn.execute(text(f'SET LOCAL ROLE "{role_name}";'))
+                        except Exception as e:
+                            logger.debug(f"Could not SET LOCAL ROLE {role_name}: {e}")
+                    conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
+                    result = conn.execute(text(sanitized_sql))
+                    cols = list(result.keys())
+                    rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
                 # Convert timestamps / decimals to serializable types
                 clean_rows = []
                 for r in rows:

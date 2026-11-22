@@ -120,6 +120,8 @@ export const AskInsightForge: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const webSpeechTranscriptRef = useRef<string>('');
 
   const isCustomDataset = selectedDatasetId !== OLIST_DEMO_ID;
 
@@ -262,9 +264,10 @@ export const AskInsightForge: React.FC = () => {
   const startRecording = async () => {
     setVoiceNotice(null);
     setError(null);
+    webSpeechTranscriptRef.current = '';
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setVoiceNotice('Microphone audio recording is not supported in this browser.');
+      triggerActiveBrowserSpeech();
       return;
     }
 
@@ -286,6 +289,29 @@ export const AskInsightForge: React.FC = () => {
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
+      // Start Web Speech in parallel as resilient fallback
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = false;
+          recognition.lang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+          recognition.onresult = (e: any) => {
+            let str = '';
+            for (let i = 0; i < e.results.length; i++) {
+              str += e.results[i][0].transcript + ' ';
+            }
+            webSpeechTranscriptRef.current = str.trim();
+          };
+          recognition.onerror = () => {};
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch (e) {
+          recognitionRef.current = null;
+        }
+      }
+
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
@@ -304,8 +330,13 @@ export const AskInsightForge: React.FC = () => {
           type: recorder.mimeType || 'audio/webm'
         });
 
-        if (audioBlob.size === 0) {
-          setVoiceNotice('No audio data captured. Please try recording again.');
+        if (audioBlob.size < 64) {
+          if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
+            setQuestion(webSpeechTranscriptRef.current.trim());
+            setVoiceNotice('Transcribed using browser speech recognition. Review and click Ask.');
+            return;
+          }
+          setVoiceNotice('Recording was too short. Please speak for at least 1-2 seconds and try again.');
           return;
         }
         await processAudioTranscription(audioBlob);
@@ -325,31 +356,96 @@ export const AskInsightForge: React.FC = () => {
         });
       }, 1000);
     } catch (err: any) {
-      setVoiceNotice('Microphone access was denied or unavailable.');
-      setIsRecording(false);
+      triggerActiveBrowserSpeech();
     }
   };
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+      try {
+        if (mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.requestData();
+        }
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.error('Error stopping MediaRecorder:', e);
+      }
+    }
+  };
+
+  const triggerActiveBrowserSpeech = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceNotice('Voice unavailable, please type your question.');
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      const targetLang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
+      recognition.lang = targetLang;
+
+      setVoiceNotice(`Listening via browser speech recognition (${selectedLanguage === 'hi' ? 'Hindi' : 'English'})... Speak now.`);
+      setIsRecording(true);
+
+      recognition.onresult = (event: any) => {
+        setIsRecording(false);
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript && transcript.trim()) {
+          setQuestion(transcript.trim());
+          setVoiceNotice(`Transcribed using browser speech recognition (${selectedLanguage === 'hi' ? 'Hindi' : 'English'}). Review and click Ask.`);
+        } else {
+          setVoiceNotice('Voice unavailable, please type your question.');
+        }
+      };
+
+      recognition.onerror = () => {
+        setIsRecording(false);
+        setVoiceNotice('Voice unavailable, please type your question.');
+      };
+
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+
+      recognition.start();
+    } catch (e) {
+      setIsRecording(false);
+      setVoiceNotice('Voice unavailable, please type your question.');
     }
   };
 
   const processAudioTranscription = async (blob: Blob) => {
     setIsTranscribing(true);
-    setVoiceNotice(null);
+    setVoiceNotice('Uploading & transcribing speech with AI...');
     try {
       const result = await api.transcribeVoice(blob, 'voice_query.webm');
-      if (result.text) {
-        setQuestion(result.text);
+      if (result.text && result.text.trim()) {
+        setQuestion(result.text.trim());
         const langLabel = result.detected_language === 'hi' ? 'Hindi (हिन्दी)' : (result.detected_language === 'hinglish' ? 'Hinglish' : 'English');
         setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask.`);
+      } else if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
+        setQuestion(webSpeechTranscriptRef.current.trim());
+        setVoiceNotice('Transcribed using browser speech recognition. Review and click Ask.');
       } else {
-        setVoiceNotice('Transcription did not return speech text.');
+        setVoiceNotice('Voice unavailable, please type your question.');
       }
     } catch (err: any) {
-      setVoiceNotice('Voice transcription failed. You can type your question directly.');
+      // Whenever backend transcription fails (any non-200), automatically fall back to browser Web Speech API
+      if (webSpeechTranscriptRef.current && webSpeechTranscriptRef.current.trim()) {
+        setQuestion(webSpeechTranscriptRef.current.trim());
+        setVoiceNotice('Backend voice service unavailable. Transcribed using browser speech recognition. Review and click Ask.');
+      } else {
+        triggerActiveBrowserSpeech();
+      }
     } finally {
       setIsTranscribing(false);
     }
@@ -527,6 +623,66 @@ export const AskInsightForge: React.FC = () => {
             </div>
           </div>
 
+          {/* Language Selector & Recording Indicator */}
+          <div className="flex flex-wrap items-center justify-between text-2xs text-slate-500 gap-2 px-1">
+            <div className="flex items-center space-x-2">
+              <span className="flex items-center space-x-1 font-medium text-slate-600">
+                <Languages className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Speech Language:</span>
+              </span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedLanguage('auto')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                    selectedLanguage === 'auto'
+                      ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLanguage('en')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                    selectedLanguage === 'en'
+                      ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  English (en-IN)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLanguage('hi')}
+                  className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                    selectedLanguage === 'hi'
+                      ? 'bg-white text-indigo-600 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  हिन्दी (hi-IN)
+                </button>
+              </div>
+            </div>
+
+            {isRecording && (
+              <div className="flex items-center space-x-1.5 text-rose-600 font-semibold bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md">
+                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                <span>
+                  Recording: {Math.floor(recordingSeconds / 60)}:{(recordingSeconds % 60).toString().padStart(2, '0')} / 1:00
+                </span>
+              </div>
+            )}
+            {isTranscribing && (
+              <div className="flex items-center space-x-1.5 text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                <RefreshCw className="w-3 h-3 animate-spin text-indigo-600" />
+                <span>Transcribing speech...</span>
+              </div>
+            )}
+          </div>
+
           {/* Question Input Box + Voice Recording */}
           <div className="space-y-2">
             <div className="relative flex items-center">
@@ -536,7 +692,9 @@ export const AskInsightForge: React.FC = () => {
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  isCustomDataset
+                  isRecording
+                    ? 'Listening... Speak your question into the microphone...'
+                    : isCustomDataset
                     ? `Ask questions about ${selectedDataset?.name || 'this dataset'}...`
                     : 'Ask anything about sales, categories, revenue, delivery SLA, or top sellers...'
                 }
@@ -553,11 +711,25 @@ export const AskInsightForge: React.FC = () => {
                   className={`p-2 rounded-lg transition-colors cursor-pointer ${
                     isRecording
                       ? 'bg-rose-500 text-white animate-pulse'
+                      : isTranscribing
+                      ? 'bg-indigo-50 text-indigo-600'
                       : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'
                   }`}
-                  title={isRecording ? 'Stop recording' : 'Voice input (English / Hindi)'}
+                  title={
+                    isRecording
+                      ? 'Stop recording'
+                      : isTranscribing
+                      ? 'Transcribing audio...'
+                      : 'Voice input (English / Hindi)'
+                  }
                 >
-                  {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  {isRecording ? (
+                    <Square className="w-4 h-4" />
+                  ) : isTranscribing ? (
+                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
                 </button>
 
                 {/* Submit Button */}
@@ -578,7 +750,7 @@ export const AskInsightForge: React.FC = () => {
 
             {/* Voice Notice */}
             {voiceNotice && (
-              <div className="text-2xs text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg p-2 flex items-center space-x-1.5">
+              <div className="text-2xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 flex items-center space-x-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span>{voiceNotice}</span>
               </div>

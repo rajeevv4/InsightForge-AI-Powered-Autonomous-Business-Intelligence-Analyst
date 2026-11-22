@@ -79,7 +79,7 @@ def check_date_ambiguity(values: List[str]) -> Tuple[bool, Optional[str]]:
     total_dates = 0
     first_ambiguous = None
 
-    date_pattern = re.compile(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$")
+    date_pattern = re.compile(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})(?:[ T](\d{1,2}):(\d{2}))?", re.IGNORECASE)
 
     for v in values:
         if not v or not isinstance(v, str):
@@ -99,56 +99,140 @@ def check_date_ambiguity(values: List[str]) -> Tuple[bool, Optional[str]]:
     return False, None
 
 
-def infer_column_type(values: List[Any]) -> Tuple[str, Optional[str]]:
+def infer_column_type(
+    values: List[Any],
+    col_name: str = "",
+    return_format: bool = False
+) -> Any:
     """
     Infers PostgreSQL column type and flags date format ambiguity.
-    Returns (pg_type, warning_flag).
+    Supports:
+      - Boolean
+      - Integer & Bigint (signed and unsigned)
+      - Numeric/Decimal
+      - ISO with T or space (TIMESTAMP/DATE)
+      - dd/mm/yyyy and mm/dd/yyyy with and without time (TIMESTAMP/DATE)
+      - 12-hour AM/PM timestamps
+      - Month names (e.g. 15-Jan-2023, January 15, 2023)
+      - Epoch seconds (10-digit) and milliseconds (13-digit)
+      - Excel serial dates (30000-65000)
+    Returns (pg_type, warning_flag) or (pg_type, warning_flag, dominant_format) if return_format=True.
     """
     non_nulls = [v for v in values if v is not None and str(v).strip() != "" and str(v).lower() != "nan"]
     if not non_nulls:
-        return "TEXT", None
+        return ("TEXT", None, None) if return_format else ("TEXT", None)
 
     n_total = len(non_nulls)
     str_vals = [str(v).strip() for v in non_nulls]
+    lower_col = col_name.lower() if col_name else ""
 
     # 1. Boolean check
     bool_matches = sum(1 for s in str_vals if s.lower() in ("true", "false", "t", "f", "yes", "no", "1", "0"))
     if bool_matches == n_total and any(s.lower() in ("true", "false", "yes", "no", "t", "f") for s in str_vals):
-        return "BOOLEAN", None
+        return ("BOOLEAN", None, None) if return_format else ("BOOLEAN", None)
 
-    # 2. Integer check (including signed integers e.g. -2, +3)
+    # 2. Datetime: Epoch seconds (10 digits) or milliseconds (13 digits)
+    if any(k in lower_col for k in ("time", "date", "ts", "created", "at", "timestamp")):
+        epoch_s_matches = sum(1 for s in str_vals if re.match(r"^\d{10}$", s) and 1000000000 <= int(s) <= 2500000000)
+        if epoch_s_matches == n_total:
+            return ("TIMESTAMP", None, "epoch_s") if return_format else ("TIMESTAMP", None)
+
+        epoch_ms_matches = sum(1 for s in str_vals if re.match(r"^\d{13}$", s) and 1000000000000 <= int(s) <= 2500000000000)
+        if epoch_ms_matches == n_total:
+            return ("TIMESTAMP", None, "epoch_ms") if return_format else ("TIMESTAMP", None)
+
+    # 3. Datetime: Excel serial dates (e.g. 44927 or 44927.5)
+    if any(k in lower_col for k in ("time", "date", "day", "created", "at")):
+        excel_matches = []
+        has_fraction = False
+        for s in str_vals:
+            if re.match(r"^\d{4,5}(?:\.\d+)?$", s):
+                try:
+                    val = float(s)
+                    if 30000 <= val <= 65000:
+                        excel_matches.append(val)
+                        if "." in s and not s.endswith(".0"):
+                            has_fraction = True
+                except ValueError:
+                    pass
+        if len(excel_matches) == n_total:
+            c_type = "TIMESTAMP" if has_fraction else "DATE"
+            return (c_type, None, "excel_serial") if return_format else (c_type, None)
+
+    # 4. Integer check (including signed integers e.g. -2, +3)
     int_matches = sum(1 for s in str_vals if re.match(r"^[+-]?\d+$", s))
     if int_matches == n_total:
-        # Check range
         max_abs = max(abs(int(s)) for s in str_vals)
         if max_abs > 2147483647:
-            return "BIGINT", None
-        return "INTEGER", None
+            return ("BIGINT", None, None) if return_format else ("BIGINT", None)
+        return ("INTEGER", None, None) if return_format else ("INTEGER", None)
 
-    # 3. Numeric / Decimal check (including signed decimals e.g. -5.5, +3.14)
+    # 5. Numeric / Decimal check (including signed decimals e.g. -5.5, +3.14)
     num_matches = sum(1 for s in str_vals if re.match(r"^[+-]?\d+(?:\.\d+)?$", s))
     if num_matches == n_total:
-        return "NUMERIC(15, 2)", None
+        return ("NUMERIC(15, 2)", None, None) if return_format else ("NUMERIC(15, 2)", None)
 
-    # 4. Date and Timestamp check
-    is_ambiguous, sample_amb = check_date_ambiguity(str_vals)
-    warning = None
-    if is_ambiguous:
-        warning = f"Ambiguous date format (e.g. '{sample_amb}'): day and month are both <= 12."
+    # 6. Datetime: ISO format
+    iso_ts_matches = sum(1 for s in str_vals if re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$", s))
+    if iso_ts_matches == n_total:
+        return ("TIMESTAMP", None, "iso_timestamp") if return_format else ("TIMESTAMP", None)
 
     iso_date_matches = sum(1 for s in str_vals if re.match(r"^\d{4}-\d{2}-\d{2}$", s))
     if iso_date_matches == n_total:
-        return "DATE", warning
+        return ("DATE", None, "iso_date") if return_format else ("DATE", None)
 
-    iso_timestamp_matches = sum(1 for s in str_vals if re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?", s))
-    if iso_timestamp_matches == n_total:
-        return "TIMESTAMP", warning
+    # 7. Datetime: Month names (e.g. 15-Jan-2023, January 15, 2023)
+    month_pat = re.compile(
+        r"^(?:\d{1,2}[/\-\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[/\-\s]\d{2,4}|"
+        r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{2,4})"
+        r"(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|am|pm))?)?$",
+        re.IGNORECASE
+    )
+    month_matches = sum(1 for s in str_vals if month_pat.match(s))
+    if month_matches == n_total:
+        has_time = any(":" in s for s in str_vals)
+        c_type = "TIMESTAMP" if has_time else "DATE"
+        return (c_type, None, "month_name") if return_format else (c_type, None)
 
-    slash_date_matches = sum(1 for s in str_vals if re.match(r"^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$", s))
-    if slash_date_matches == n_total:
-        return "DATE", warning
+    # 8. Datetime: Slash / dash dates with or without time & 12-hour AM/PM
+    # e.g. 06/06/2023 10:15, 15/01/2023, 01/15/2023 02:30 PM
+    slash_pat = re.compile(
+        r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM|am|pm))?)?$",
+        re.IGNORECASE
+    )
+    slash_parsed = []
+    for s in str_vals:
+        m = slash_pat.match(s)
+        if m:
+            p1 = int(m.group(1))
+            p2 = int(m.group(2))
+            has_time = m.group(4) is not None
+            slash_parsed.append((p1, p2, has_time, s))
 
-    return "TEXT", None
+    if len(slash_parsed) == n_total:
+        any_has_time = any(sp[2] for sp in slash_parsed)
+        col_type = "TIMESTAMP" if any_has_time else "DATE"
+
+        all_ambiguous = all(sp[0] <= 12 and sp[1] <= 12 for sp in slash_parsed)
+        has_p1_gt_12 = any(sp[0] > 12 for sp in slash_parsed)
+        has_p2_gt_12 = any(sp[1] > 12 for sp in slash_parsed)
+
+        if all_ambiguous:
+            sample_amb = slash_parsed[0][3]
+            warning = f"Ambiguous date format (e.g. '{sample_amb}'): day and month are both <= 12. Override via PATCH /api/datasets/{{id}}/columns with format_override ('dd/mm/yyyy' or 'mm/dd/yyyy')."
+            dominant = "dd/mm/yyyy" + (" HH:MM" if any_has_time else "")
+            return (col_type, warning, dominant) if return_format else (col_type, warning)
+        elif has_p1_gt_12 and not has_p2_gt_12:
+            dominant = "dd/mm/yyyy" + (" HH:MM" if any_has_time else "")
+            return (col_type, None, dominant) if return_format else (col_type, None)
+        elif has_p2_gt_12 and not has_p1_gt_12:
+            dominant = "mm/dd/yyyy" + (" HH:MM" if any_has_time else "")
+            return (col_type, None, dominant) if return_format else (col_type, None)
+        else:
+            dominant = "dd/mm/yyyy" + (" HH:MM" if any_has_time else "")
+            return (col_type, None, dominant) if return_format else (col_type, None)
+
+    return ("TEXT", None, None) if return_format else ("TEXT", None)
 
 
 class DatasetFileParser:
@@ -354,10 +438,32 @@ class DatasetFileParser:
         column_types = {}
         for safe_col in safe_cols:
             vals = df[safe_col].dropna().astype(str).tolist()[:50]
-            col_type, warning = infer_column_type(vals)
+            col_type, warning, dom_fmt = infer_column_type(vals, col_name=safe_col, return_format=True)
             column_types[safe_col] = col_type
             if warning:
                 column_warnings.append({"column": safe_col, "warning": warning})
+
+            # Normalize date and timestamp columns to ISO format so PostgreSQL COPY loads cleanly into DATE/TIMESTAMP
+            if col_type in ("DATE", "TIMESTAMP"):
+                try:
+                    if dom_fmt == "epoch_s":
+                        dt_series = pd.to_datetime(pd.to_numeric(df[safe_col], errors="coerce"), unit="s")
+                    elif dom_fmt == "epoch_ms":
+                        dt_series = pd.to_datetime(pd.to_numeric(df[safe_col], errors="coerce"), unit="ms")
+                    elif dom_fmt == "excel_serial":
+                        dt_series = pd.to_datetime(pd.to_numeric(df[safe_col], errors="coerce"), unit="D", origin="1899-12-30")
+                    elif dom_fmt and dom_fmt.startswith("dd/mm"):
+                        dt_series = pd.to_datetime(df[safe_col], dayfirst=True, errors="coerce")
+                    elif dom_fmt and dom_fmt.startswith("mm/dd"):
+                        dt_series = pd.to_datetime(df[safe_col], dayfirst=False, errors="coerce")
+                    else:
+                        dt_series = pd.to_datetime(df[safe_col], errors="coerce")
+
+                    fmt_str = "%Y-%m-%d %H:%M:%S" if col_type == "TIMESTAMP" else "%Y-%m-%d"
+                    if dt_series.notnull().sum() > 0:
+                        df[safe_col] = dt_series.dt.strftime(fmt_str).fillna("")
+                except Exception as e:
+                    logger.debug(f"Date normalization notice for column {safe_col}: {e}")
 
         # 2. Neutralize formula injection ONLY for columns that remain TEXT
         # Cells starting with = or @, or dangerous DDE syntax (+cmd|... or -cmd|...)

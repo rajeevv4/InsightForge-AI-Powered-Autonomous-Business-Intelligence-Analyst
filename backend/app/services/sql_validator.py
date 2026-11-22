@@ -12,6 +12,8 @@ Guarantees:
 - Enforced LIMIT <= 500
 """
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Tuple, Optional, Set, List, Dict, Any
 import sqlglot
@@ -70,6 +72,12 @@ DENIED_FUNCTIONS: Set[str] = {
     "set_config",
     "current_setting",
     "query_to_xml",
+    "to_regclass",
+    "to_regproc",
+    "to_regtype",
+    "to_regoper",
+    "to_regrole",
+    "to_regnamespace",
     "pg_backend_pid",
     "pg_terminate_backend",
     "pg_cancel_backend",
@@ -117,6 +125,12 @@ class SQLValidator:
             return False, None, "SQL query cannot be empty."
 
         cleaned = raw_sql.strip().rstrip(";")
+        # Normalize unicode representation
+        cleaned = unicodedata.normalize("NFKC", cleaned)
+
+        # Check for unclosed multiline comment trick
+        if "/*" in cleaned and "*/" not in cleaned:
+            return False, None, "Unclosed block comment detected."
 
         # 1. Parse using sqlglot Postgres dialect
         try:
@@ -139,7 +153,7 @@ class SQLValidator:
             if isinstance(node, (
                 exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create,
                 exp.Alter, exp.TruncateTable, exp.Grant, exp.Revoke, exp.Command,
-                exp.Copy, exp.Set
+                exp.Copy, exp.Set, exp.SetItem, exp.Transaction
             )):
                 return False, None, f"Forbidden statement type detected: {type(node).__name__}."
 
@@ -147,7 +161,15 @@ class SQLValidator:
         cte_aliases: Set[str] = set()
         for cte in stmt.find_all(exp.CTE):
             if cte.alias:
-                cte_aliases.add(cte.alias.lower())
+                c_alias = unicodedata.normalize("NFKC", cte.alias).strip().strip('"').lower()
+                # Prevent CTEs from shadowing protected schemas or metadata tables
+                if (c_alias in DENIED_TABLES or
+                    c_alias in DENIED_SCHEMAS or
+                    c_alias.startswith("ds_") or
+                    c_alias.startswith("pg_") or
+                    c_alias in ("insightforge", "information_schema")):
+                    return False, None, f"CTE alias '{cte.alias}' conflicts with protected table or schema name."
+                cte_aliases.add(c_alias)
 
         is_custom_dataset = context is not None and not context.is_demo
         expected_schema = context.schema_name.lower() if is_custom_dataset else None
@@ -156,12 +178,23 @@ class SQLValidator:
         # 4. Table allow-list & system schema check
         referenced_tables: List[str] = []
         for table_node in stmt.find_all(exp.Table):
-            t_name = table_node.name.lower()
-            schema_name = (table_node.db or "").lower()
+            raw_t_name = str(table_node.this.name if hasattr(table_node.this, "name") else table_node.name)
+            raw_db_name = str(table_node.db or "")
+            t_name = unicodedata.normalize("NFKC", raw_t_name).strip().strip('"').lower()
+            schema_name = unicodedata.normalize("NFKC", raw_db_name).strip().strip('"').lower()
 
-            # Deny system schemas
-            if schema_name in DENIED_SCHEMAS:
+            # Unicode lookalike / non-ASCII identifier check
+            if not re.match(r"^[a-z0-9_]+$", t_name):
+                return False, None, f"Invalid or non-ASCII characters in table identifier: '{t_name}'."
+            if schema_name and not re.match(r"^[a-z0-9_]+$", schema_name):
+                return False, None, f"Invalid or non-ASCII characters in schema identifier: '{schema_name}'."
+
+            # Deny system schemas and system tables/views
+            if schema_name in DENIED_SCHEMAS or schema_name.startswith("pg_") or schema_name == "information_schema":
                 return False, None, f"Access to system schema '{schema_name}' is forbidden."
+
+            if t_name.startswith("pg_"):
+                return False, None, f"Access to system table/view '{t_name}' is forbidden."
 
             if is_custom_dataset and schema_name == "insightforge":
                 return False, None, "Access to 'insightforge' metadata schema is forbidden."
@@ -170,9 +203,16 @@ class SQLValidator:
             if t_name in DENIED_TABLES:
                 return False, None, f"Access to internal table '{t_name}' is strictly forbidden."
 
+            # Deny dangerous function used as a table / function expression in FROM clause
+            if t_name in DENIED_FUNCTIONS:
+                return False, None, f"Forbidden database function call: '{t_name}'."
+
             if is_custom_dataset:
-                # If not a CTE alias, must be schema-qualified with the dataset's schema
-                if t_name not in cte_aliases:
+                # If a CTE alias, cannot be schema-qualified (e.g. ds_a.cte or ds_b.cte)
+                if t_name in cte_aliases:
+                    if schema_name:
+                        return False, None, f"CTE alias '{t_name}' cannot be schema-qualified."
+                else:
                     if not schema_name:
                         return False, None, (
                             f"Table '{t_name}' must be schema-qualified with '{expected_schema}.{t_name}'."
@@ -200,13 +240,15 @@ class SQLValidator:
 
         # 5. Denylist functions check (including root and subqueries)
         for fn_node in stmt.find_all(exp.Func, exp.Anonymous):
-            fn_name = fn_node.name.lower() if hasattr(fn_node, "name") else ""
+            fn_name = unicodedata.normalize("NFKC", fn_node.name.lower() if hasattr(fn_node, "name") else "").strip().strip('"')
             if not fn_name:
                 continue
 
             # Check schema qualification on function
-            if hasattr(fn_node, "db") and fn_node.db and fn_node.db.lower() in DENIED_SCHEMAS:
-                return False, None, f"Function from system schema '{fn_node.db}' is forbidden."
+            if hasattr(fn_node, "db") and fn_node.db:
+                fn_schema = unicodedata.normalize("NFKC", str(fn_node.db)).strip().strip('"').lower()
+                if fn_schema in DENIED_SCHEMAS or fn_schema.startswith("pg_") or fn_schema == "information_schema":
+                    return False, None, f"Function from system schema '{fn_node.db}' is forbidden."
 
             # Check function denylist
             if fn_name in DENIED_FUNCTIONS or fn_name.startswith("lo_"):

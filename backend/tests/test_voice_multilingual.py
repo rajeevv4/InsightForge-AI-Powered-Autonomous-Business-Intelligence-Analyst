@@ -52,6 +52,74 @@ class TestVoiceAndMultilingual(unittest.TestCase):
         self.assertEqual(data["detected_language"], "hinglish")
         self.assertGreaterEqual(data["confidence"], 0.90)
 
+    def test_transcribe_webm_with_codecs_parameter_normalized(self):
+        """Browser MediaRecorder audio/webm;codecs=opus is accepted and normalized."""
+        dummy_audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 500
+
+        mock_gemini_resp = MagicMock()
+        mock_gemini_resp.text = '{"text": "what is total delivered revenue?", "detected_language": "en", "confidence": 0.98}'
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_gemini_resp
+
+        with patch("backend.app.config.settings.GEMINI_API_KEY", "dummy_key"):
+            with patch("google.genai.Client", return_value=mock_client):
+                response = self.client.post(
+                    "/api/voice/transcribe",
+                    files={"file": ("voice_query.webm", io.BytesIO(dummy_audio), "audio/webm;codecs=opus")}
+                )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["text"], "what is total delivered revenue?")
+        self.assertEqual(data["detected_language"], "en")
+
+    def test_transcribe_gemini_quota_exceeded_returns_clean_503(self):
+        """Gemini 429 quota error returns HTTP 503 with human message, no raw trace."""
+        dummy_audio = b"\x1a\x45\xdf\xa3" + b"\x00" * 500
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Quota exceeded on Free Tier")
+
+        with patch("backend.app.config.settings.GEMINI_API_KEY", "dummy_key"):
+            with patch("google.genai.Client", return_value=mock_client):
+                response = self.client.post(
+                    "/api/voice/transcribe",
+                    files={"file": ("speech.webm", io.BytesIO(dummy_audio), "audio/webm")}
+                )
+
+        self.assertEqual(response.status_code, 503)
+        detail = response.json()["detail"]
+        self.assertIn("quota exceeded", detail.lower())
+        self.assertNotIn("RESOURCE_EXHAUSTED:", detail)
+        self.assertNotIn("Traceback", detail)
+
+    def test_transcribe_real_sample_wav_file(self):
+        """Real audio file from data/samples/voice/ passes validation and transcribes."""
+        sample_path = "data/samples/voice/sample_question.wav"
+        if not os.path.exists(sample_path):
+            self.skipTest(f"{sample_path} not found")
+
+        with open(sample_path, "rb") as f:
+            audio_bytes = f.read()
+
+        mock_gemini_resp = MagicMock()
+        mock_gemini_resp.text = '{"text": "sabse zyada bikri kis category mein hui?", "detected_language": "hinglish", "confidence": 0.95}'
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_gemini_resp
+
+        with patch("backend.app.config.settings.GEMINI_API_KEY", "dummy_key"):
+            with patch("google.genai.Client", return_value=mock_client):
+                response = self.client.post(
+                    "/api/voice/transcribe",
+                    files={"file": ("sample_question.wav", io.BytesIO(audio_bytes), "audio/wav")}
+                )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["text"], "sabse zyada bikri kis category mein hui?")
+
     def test_transcribe_oversize_audio_rejected(self):
         """Audio exceeding 10 MB limit returns HTTP 413 Payload Too Large."""
         oversize_audio = b"\x1a\x45\xdf\xa3" + b"\x00" * (10 * 1024 * 1024 + 100)

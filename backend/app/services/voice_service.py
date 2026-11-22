@@ -26,6 +26,11 @@ class VoiceTranscriptionError(Exception):
     pass
 
 
+class VoiceQuotaExceededError(Exception):
+    """Raised when Gemini audio transcription quota is exceeded or rate limited."""
+    pass
+
+
 class GeminiKeyMissingError(Exception):
     """Raised when Gemini API key is missing for voice transcription."""
     pass
@@ -57,6 +62,7 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
     """
     Validates audio size and magic bytes against allowed audio formats.
+    Normalizes parameters (e.g. codecs=opus) and maps container formats.
     Returns normalized mime type or raises AudioValidationError.
     """
     if not audio_bytes or len(audio_bytes) == 0:
@@ -74,17 +80,25 @@ def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
             status_code=413
         )
 
-    norm_mime = declared_mime.lower().split(";")[0].strip()
+    raw_mime = (declared_mime or "").lower().split(";")[0].strip()
 
-    # Normalize audio/mp3 to audio/mpeg and audio/x-wav to audio/wav
-    if norm_mime == "audio/mp3":
-        norm_mime = "audio/mpeg"
-    elif norm_mime == "audio/x-wav":
+    # Normalize aliases / containers to standard MIME types
+    if raw_mime in ("audio/webm", "video/webm", "application/webm"):
+        norm_mime = "audio/webm"
+    elif raw_mime in ("audio/ogg", "application/ogg", "video/ogg", "audio/opus"):
+        norm_mime = "audio/ogg"
+    elif raw_mime in ("audio/wav", "audio/x-wav", "audio/wave"):
         norm_mime = "audio/wav"
-    elif norm_mime == "audio/x-m4a":
-        norm_mime = "audio/m4a"
+    elif raw_mime in ("audio/mpeg", "audio/mp3"):
+        norm_mime = "audio/mpeg"
+    elif raw_mime in ("audio/mp4", "audio/m4a", "audio/x-m4a", "video/mp4", "audio/aac"):
+        norm_mime = "audio/mp4"
+    elif raw_mime in ("application/octet-stream", "binary/octet-stream", ""):
+        norm_mime = "application/octet-stream"
+    else:
+        norm_mime = raw_mime
 
-    if norm_mime not in ALLOWED_MIME_TYPES:
+    if norm_mime not in ALLOWED_MIME_TYPES and norm_mime != "application/octet-stream":
         raise AudioValidationError(
             f"Unsupported audio format '{declared_mime}'. Allowed formats: webm, ogg, wav, mp3, m4a.",
             status_code=415
@@ -92,7 +106,7 @@ def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
 
     # Magic byte signature verification
     magic_ok = False
-    prefix = audio_bytes[:16]
+    prefix = audio_bytes[:32]
 
     if prefix.startswith(b"RIFF") and b"WAVE" in prefix[:12]:
         magic_ok = True
@@ -106,13 +120,19 @@ def validate_audio_content(audio_bytes: bytes, declared_mime: str) -> str:
     elif prefix.startswith(b"ID3") or prefix[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
         magic_ok = True
         norm_mime = "audio/mpeg"
-    elif b"ftyp" in prefix or prefix[4:8] == b"ftyp":
+    elif b"ftyp" in prefix or prefix[4:8] == b"ftyp" or (len(prefix) >= 2 and prefix[0] == 0xFF and (prefix[1] & 0xF6) == 0xF0):
         magic_ok = True
         norm_mime = "audio/mp4"
 
     if not magic_ok:
         raise AudioValidationError(
             "Audio file content does not match recognized audio signatures (RIFF, OGG, WebM, MP3, MP4/M4A).",
+            status_code=415
+        )
+
+    if norm_mime not in ALLOWED_MIME_TYPES:
+        raise AudioValidationError(
+            f"Unsupported audio format '{declared_mime}'. Allowed formats: webm, ogg, wav, mp3, m4a.",
             status_code=415
         )
 
@@ -266,13 +286,20 @@ class VoiceService:
 
         except Exception as e:
             latency_ms = (time.time() - start_time) * 1000.0
-            logger.error(f"Gemini voice transcription failed: {e}", exc_info=True)
+            err_str = str(e)
+            logger.error(f"Gemini voice transcription failed: {err_str}", exc_info=True)
             AIAuditService.log(
                 question=f"[voice_transcribe: failed, size: {size_bytes}B]",
                 intent="voice_transcribe_error",
                 generated_sql=None,
                 latency_ms=latency_ms,
                 success=False,
-                error=str(e)
+                error=err_str
             )
-            raise VoiceTranscriptionError(f"Voice transcription service error: {e}")
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                raise VoiceQuotaExceededError(
+                    "Voice transcription quota exceeded or temporarily unavailable. Please type your question or use browser speech fallback."
+                )
+            raise VoiceTranscriptionError(
+                "Voice transcription service error. Please type your question or use browser speech fallback."
+            )

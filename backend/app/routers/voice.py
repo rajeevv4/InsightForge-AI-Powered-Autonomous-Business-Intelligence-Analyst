@@ -8,6 +8,7 @@ from backend.app.services.voice_service import (
     VoiceService,
     AudioValidationError,
     GeminiKeyMissingError,
+    VoiceQuotaExceededError,
     VoiceTranscriptionError
 )
 
@@ -47,6 +48,12 @@ async def transcribe_voice(request: Request, file: UploadFile = File(...)) -> Vo
         )
     except GeminiKeyMissingError as e:
         logger.warning(f"Gemini API key missing for voice transcription: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e)
+        )
+    except VoiceQuotaExceededError as e:
+        logger.warning(f"Voice transcription quota exceeded: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(e)

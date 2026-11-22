@@ -234,6 +234,16 @@ class DatasetService:
                 cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO insightforge_ro;").format(sql.Identifier(schema_name)))
                 cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO insightforge_ro;").format(sql.Identifier(schema_name)))
 
+                # Defense-in-depth: dedicated NOLOGIN role for this dataset schema
+                role_name = f"dsr_{schema_name[3:]}" if schema_name.startswith("ds_") else f"dsr_{dataset_hex}"
+                try:
+                    cur.execute(sql.SQL("CREATE ROLE {} NOLOGIN;").format(sql.Identifier(role_name)))
+                    cur.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
+                    cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
+                    cur.execute(sql.SQL("GRANT {} TO insightforge_ro;").format(sql.Identifier(role_name)))
+                except Exception as e:
+                    logger.warning(f"Could not create defense-in-depth role {role_name}: {e}")
+
                 total_rows_inserted = 0
 
                 # B. Create tables and COPY data
@@ -263,11 +273,19 @@ class DatasetService:
                     )
                     cur.copy_expert(copy_sql.as_string(cur), csv_buffer)
 
-                    # Grant SELECT on newly created table to insightforge_ro explicitly
+                    # Grant SELECT on newly created table to insightforge_ro and dedicated role explicitly
                     cur.execute(sql.SQL("GRANT SELECT ON {}.{} TO insightforge_ro;").format(
                         sql.Identifier(schema_name),
                         sql.Identifier(safe_tbl)
                     ))
+                    try:
+                        cur.execute(sql.SQL("GRANT SELECT ON {}.{} TO {};").format(
+                            sql.Identifier(schema_name),
+                            sql.Identifier(safe_tbl),
+                            sql.Identifier(role_name)
+                        ))
+                    except Exception:
+                        pass
                     total_rows_inserted += len(df)
 
                 # C. Save Metadata
@@ -678,6 +696,21 @@ class DatasetService:
                     desc = up.get("user_description")
 
                     if table_name and col_name:
+                        format_override = up.get("format_override")
+                        if format_override:
+                            conn.execute(
+                                text("""
+                                    UPDATE insightforge.dataset_columns c
+                                    SET stats = COALESCE(c.stats, '{}'::jsonb) || jsonb_build_object('format_override', :fmt_val::text)
+                                    FROM insightforge.dataset_tables t
+                                    WHERE c.table_id = t.id
+                                      AND t.dataset_id = :d_id
+                                      AND t.safe_name = :t_name
+                                      AND c.safe_name = :c_name;
+                                """),
+                                {"fmt_val": format_override, "d_id": dataset_id, "t_name": table_name, "c_name": col_name}
+                            )
+
                         conn.execute(
                             text("""
                                 UPDATE insightforge.dataset_columns c
@@ -691,6 +724,16 @@ class DatasetService:
                             """),
                             {"role": role, "desc": desc, "d_id": dataset_id, "t_name": table_name, "c_name": col_name}
                         )
+
+                        if role == "datetime":
+                            conn.execute(
+                                text("""
+                                    UPDATE insightforge.dataset_tables
+                                    SET candidate_time_column = :c_name
+                                    WHERE dataset_id = :d_id AND safe_name = :t_name;
+                                """),
+                                {"c_name": col_name, "d_id": dataset_id, "t_name": table_name}
+                            )
 
             if confirmed_relationships:
                 for rel in confirmed_relationships:
@@ -830,12 +873,28 @@ class DatasetService:
 
         schema_name = ds_row.schema_name
 
-        # 1. Drop schema CASCADE with admin raw connection
+        # 1. Drop schema CASCADE with admin raw connection and drop defense-in-depth role
         raw_conn = engine.raw_connection()
         try:
             with raw_conn.cursor() as cur:
                 cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE;").format(sql.Identifier(schema_name)))
                 cur.execute("DELETE FROM insightforge.datasets WHERE id = %s;", (dataset_id,))
+
+                # Drop defense-in-depth role
+                if schema_name.startswith("ds_"):
+                    role_name = f"dsr_{schema_name[3:]}"
+                    try:
+                        cur.execute(sql.SQL("REVOKE ALL ON SCHEMA {} FROM {};").format(sql.Identifier(schema_name), sql.Identifier(role_name)))
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(sql.SQL("REVOKE {} FROM insightforge_ro;").format(sql.Identifier(role_name)))
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name)))
+                    except Exception as e:
+                        logger.debug(f"Could not drop role {role_name}: {e}")
             raw_conn.commit()
         finally:
             raw_conn.close()

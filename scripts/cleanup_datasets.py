@@ -79,6 +79,15 @@ def cleanup_expired_datasets(dry_run: bool = False) -> int:
                     "DELETE FROM insightforge.datasets WHERE id = %s;",
                     (ds_id,)
                 )
+
+                # 3. Drop defense-in-depth role
+                if schema_name.startswith("ds_"):
+                    role_name = f"dsr_{schema_name[3:]}"
+                    try:
+                        cur.execute(sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name)))
+                    except Exception as e:
+                        logger.debug(f"Could not drop role {role_name}: {e}")
+
                 purged_count += 1
 
         if not dry_run:

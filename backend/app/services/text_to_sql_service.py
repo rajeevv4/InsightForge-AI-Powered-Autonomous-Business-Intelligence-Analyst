@@ -117,10 +117,37 @@ CANONICAL ANALYTICAL VIEWS:
 """
 
 
+def sanitize_db_error_message(err_str: str) -> str:
+    """
+    Sanitizes PostgreSQL error strings to prevent leaking cell values or sensitive literals
+    to LLM prompts during retry self-correction loops.
+    Preserves error class, syntax errors, and table/column names while stripping literals.
+    """
+    if not err_str:
+        return ""
+    s = str(err_str)
+    # Strip DETAIL lines entirely if they contain cell values or keys
+    s = re.sub(r"DETAIL:\s*Key\s*\(.*?\)=.*?(\n|$)", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"DETAIL:.*(\n|$)", "", s, flags=re.IGNORECASE)
+    # Strip specific value inputs from type casting errors e.g. "CANARY_123"
+    s = re.sub(r'invalid input syntax for [^:]+:\s*"[^"]*"', 'invalid input syntax for type: "<literal>"', s, flags=re.IGNORECASE)
+    s = re.sub(r"invalid input syntax for [^:]+:\s*'[^']*'", "invalid input syntax for type: '<literal>'", s, flags=re.IGNORECASE)
+    s = re.sub(r'value too long for type [^:]+:\s*"[^"]*"', 'value too long for type: "<literal>"', s, flags=re.IGNORECASE)
+    # Strip literals inside single quotes that might contain untrusted cell values
+    s = re.sub(r"'[^']{2,}'", "'<literal>'", s)
+    return s.strip()
+
+
 class TextToSQLService:
     """
     Guarded Text-to-SQL generation and execution engine.
     """
+    _dataset_ask_cache: Dict[Tuple[str, str], DatasetAskResponse] = {}
+
+    @classmethod
+    def clear_cache(cls):
+        """Clears the dataset ask response cache."""
+        cls._dataset_ask_cache.clear()
 
     @classmethod
     def load_semantic_rules(cls) -> str:
@@ -537,12 +564,15 @@ Do NOT include any markdown code blocks or text outside the JSON object.
 
         correction_section = ""
         if previous_error and previous_sql:
+            safe_prev_sql = previous_sql
+            if not profile.share_samples:
+                safe_prev_sql = re.sub(r"'[^']*'", "'<literal>'", safe_prev_sql)
             correction_section = f"""
 CRITICAL SELF-CORRECTION NOTICE:
 Your previous generated SQL was REJECTED:
 Previous SQL:
 ```sql
-{previous_sql}
+{safe_prev_sql}
 ```
 Validation/Database Error:
 "{previous_error}"
@@ -599,6 +629,10 @@ You must respond ONLY with a valid JSON object matching the following schema:
         Enforces tenant isolation, schema qualification, privacy model, and audit logging.
         """
         start_time = time.time()
+        cache_key = (str(dataset_id), question.strip().lower())
+        if cache_key in cls._dataset_ask_cache:
+            return cls._dataset_ask_cache[cache_key]
+
         # Verify access & retrieve profile
         profile = DatasetService.get_dataset_profile(dataset_id, owner_token=owner_token)
         semantic_resp = DatasetSemanticService.get_semantic(dataset_id, owner_token=owner_token)
@@ -673,21 +707,28 @@ You must respond ONLY with a valid JSON object matching the following schema:
                     rows, cols = [], []
                 else:
                     with readonly_engine.connect() as conn:
-                        conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
-                        result = conn.execute(text(sanitized_sql))
-                        cols = list(result.keys())
-                        raw_rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
-                        rows = []
-                        for r in raw_rows:
-                            clean_r = {}
-                            for k, v in r.items():
-                                if hasattr(v, "isoformat"):
-                                    clean_r[k] = v.isoformat()
-                                elif isinstance(v, (int, float)) or v is None:
-                                    clean_r[k] = v
-                                else:
-                                    clean_r[k] = str(v)
-                            rows.append(clean_r)
+                        with conn.begin():
+                            if not is_demo and schema_name.startswith("ds_"):
+                                role_name = f"dsr_{schema_name[3:]}"
+                                try:
+                                    conn.execute(text(f'SET LOCAL ROLE "{role_name}";'))
+                                except Exception as e:
+                                    logger.debug(f"Could not SET LOCAL ROLE {role_name}: {e}")
+                            conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
+                            result = conn.execute(text(sanitized_sql))
+                            cols = list(result.keys())
+                            raw_rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
+                            rows = []
+                            for r in raw_rows:
+                                clean_r = {}
+                                for k, v in r.items():
+                                    if hasattr(v, "isoformat"):
+                                        clean_r[k] = v.isoformat()
+                                    elif isinstance(v, (int, float)) or v is None:
+                                        clean_r[k] = v
+                                    else:
+                                        clean_r[k] = str(v)
+                                rows.append(clean_r)
 
                 gen_result = {
                     "success": True,
@@ -718,7 +759,8 @@ You must respond ONLY with a valid JSON object matching the following schema:
                         execution_time_ms=latency_ms,
                         row_count=0
                     )
-                last_error = f"Execution/Format Error: {err_str}"
+                clean_err = sanitize_db_error_message(err_str)
+                last_error = f"Execution/Format Error: {clean_err}"
                 logger.warning(f"Dataset Text-to-SQL attempt {attempt + 1} failed: {last_error}")
                 attempt += 1
 
@@ -784,7 +826,7 @@ You must respond ONLY with a valid JSON object matching the following schema:
             error=None
         )
 
-        return DatasetAskResponse(
+        resp = DatasetAskResponse(
             question=question,
             sql=sql_used,
             explanation=explanation,
@@ -796,3 +838,5 @@ You must respond ONLY with a valid JSON object matching the following schema:
             execution_time_ms=latency_ms,
             row_count=len(rows)
         )
+        cls._dataset_ask_cache[cache_key] = resp
+        return resp

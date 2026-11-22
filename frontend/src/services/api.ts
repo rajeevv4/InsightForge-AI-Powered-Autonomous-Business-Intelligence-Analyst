@@ -119,7 +119,7 @@ export const api = {
     formData.append('file', audioBlob, filename);
     const res = await client.post<VoiceTranscribeResponse>('/voice/transcribe', formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': undefined,
       },
       timeout: 30000,
     });
