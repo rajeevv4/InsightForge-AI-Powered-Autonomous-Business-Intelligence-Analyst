@@ -120,8 +120,6 @@ export const AskInsightForge: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const webSpeechTranscriptRef = useRef<string>('');
 
   const isCustomDataset = selectedDatasetId !== OLIST_DEMO_ID;
 
@@ -265,80 +263,8 @@ export const AskInsightForge: React.FC = () => {
     setVoiceNotice(null);
     setError(null);
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    // 1. Primary path: Browser Web Speech API (zero server quota, live real-time transcription)
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = selectedLanguage === 'hi' ? 'hi-IN' : 'en-IN';
-
-        recognition.onstart = () => {
-          setIsRecording(true);
-          setRecordingSeconds(0);
-          setVoiceNotice(
-            `Listening in ${selectedLanguage === 'hi' ? 'Hindi (हिन्दी)' : 'English'}... Speak into your microphone.`
-          );
-        };
-
-        recognition.onresult = (event: any) => {
-          let fullStr = '';
-          for (let i = 0; i < event.results.length; i++) {
-            fullStr += event.results[i][0].transcript + ' ';
-          }
-          const clean = fullStr.trim();
-          if (clean) {
-            setQuestion(clean);
-          }
-        };
-
-        recognition.onerror = (event: any) => {
-          console.warn('SpeechRecognition error:', event.error);
-          if (event.error === 'not-allowed') {
-            setVoiceNotice('Microphone access was denied. Please allow microphone permissions in your browser.');
-            setIsRecording(false);
-          } else if (event.error !== 'no-speech') {
-            startMediaRecorderFallback();
-          }
-        };
-
-        recognition.onend = () => {
-          setIsRecording(false);
-          if (timerIntervalRef.current) {
-            window.clearInterval(timerIntervalRef.current);
-            timerIntervalRef.current = null;
-          }
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-
-        timerIntervalRef.current = window.setInterval(() => {
-          setRecordingSeconds((prev) => {
-            if (prev >= 59) {
-              stopRecording();
-              return 60;
-            }
-            return prev + 1;
-          });
-        }, 1000);
-
-        return;
-      } catch (err: any) {
-        console.warn('SpeechRecognition start failed, falling back to MediaRecorder:', err);
-      }
-    }
-
-    // 2. Secondary path: MediaRecorder + Backend API
-    startMediaRecorderFallback();
-  };
-
-  const startMediaRecorderFallback = async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setVoiceNotice('Voice input is unavailable in this browser. Please type your question.');
-      setIsRecording(false);
+      setVoiceNotice('Microphone audio recording is not supported in this browser. Please type your question.');
       return;
     }
 
@@ -347,8 +273,12 @@ export const AskInsightForge: React.FC = () => {
       audioChunksRef.current = [];
 
       let mimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        if (MediaRecorder.isTypeSupported('audio/ogg')) {
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
           mimeType = 'audio/ogg';
         } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
           mimeType = 'audio/mp4';
@@ -374,11 +304,10 @@ export const AskInsightForge: React.FC = () => {
         }
         setIsRecording(false);
 
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || 'audio/webm'
-        });
+        const chosenMime = recorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: chosenMime });
 
-        if (audioBlob.size < 64) {
+        if (audioBlob.size < 100) {
           setVoiceNotice('Recording was too short. Please speak for at least 1-2 seconds and try again.');
           return;
         }
@@ -388,7 +317,9 @@ export const AskInsightForge: React.FC = () => {
       recorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
-      setVoiceNotice('Recording audio query... Speak into your microphone.');
+      setVoiceNotice(
+        `Listening in ${selectedLanguage === 'hi' ? 'Hindi (हिन्दी)' : 'English / Hinglish'}... Speak clearly into your microphone.`
+      );
 
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => {
@@ -400,18 +331,21 @@ export const AskInsightForge: React.FC = () => {
         });
       }, 1000);
     } catch (err: any) {
-      setVoiceNotice('Microphone access was denied or unavailable. Please type your question.');
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setVoiceNotice('Microphone access was denied. Please allow microphone permissions in your browser.');
+      } else {
+        setVoiceNotice('Could not start microphone recording. Please type your question directly.');
+      }
       setIsRecording(false);
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-      recognitionRef.current = null;
+    if (timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         if (mediaRecorderRef.current.state === 'recording') {
@@ -421,42 +355,40 @@ export const AskInsightForge: React.FC = () => {
       } catch (e) {
         console.error('Error stopping MediaRecorder:', e);
       }
-      mediaRecorderRef.current = null;
-    }
-    if (timerIntervalRef.current) {
-      window.clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
     }
     setIsRecording(false);
-
-    // Finalize notice based on whether question was captured
-    setTimeout(() => {
-      setQuestion((curr) => {
-        if (curr && curr.trim()) {
-          const langLabel = selectedLanguage === 'hi' ? 'Hindi (हिन्दी)' : 'English';
-          setVoiceNotice(`Transcribed in ${langLabel}. Review your question and click Ask AI.`);
-        } else {
-          setVoiceNotice('No speech detected. Please click the mic and speak clearly.');
-        }
-        return curr;
-      });
-    }, 250);
   };
 
   const processAudioTranscription = async (blob: Blob) => {
     setIsTranscribing(true);
-    setVoiceNotice('Uploading & transcribing speech with AI...');
+    setVoiceNotice('Transcribing audio with Gemini AI...');
     try {
-      const result = await api.transcribeVoice(blob, 'voice_query.webm');
+      const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const result = await api.transcribeVoice(blob, `voice_query.${ext}`);
       if (result.text && result.text.trim()) {
         setQuestion(result.text.trim());
-        const langLabel = result.detected_language === 'hi' ? 'Hindi (हिन्दी)' : (result.detected_language === 'hinglish' ? 'Hinglish' : 'English');
-        setVoiceNotice(`Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask AI.`);
+        const langLabel =
+          result.detected_language === 'hi'
+            ? 'Hindi (हिन्दी)'
+            : result.detected_language === 'hinglish'
+            ? 'Hinglish (हिंग्लिश)'
+            : 'English';
+        setVoiceNotice(
+          `Transcribed in ${langLabel} (${(result.confidence * 100).toFixed(0)}% confidence). Review and click Ask AI.`
+        );
       } else {
-        setVoiceNotice('Voice transcription returned no text. You can type your question directly.');
+        setVoiceNotice('No clear speech was recognized. Please try speaking again or type your question.');
       }
     } catch (err: any) {
-      setVoiceNotice('Backend voice service quota reached. Please type your question directly.');
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 429) {
+        setVoiceNotice('Gemini API quota reached. Please type your question directly.');
+      } else if (status === 503) {
+        setVoiceNotice(detail || 'AI voice service is temporarily unavailable. Please type your question.');
+      } else {
+        setVoiceNotice(detail || 'Voice transcription encountered an issue. Please type your question directly.');
+      }
     } finally {
       setIsTranscribing(false);
     }

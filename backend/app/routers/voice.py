@@ -1,5 +1,6 @@
 import logging
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from backend.app.config import settings
 from backend.app.limiter import limiter
@@ -37,7 +38,7 @@ async def transcribe_voice(request: Request, file: UploadFile = File(...)) -> Vo
         content_type = file.content_type or "audio/webm"
         audio_bytes = await file.read()
 
-        response = VoiceService.transcribe_audio(audio_bytes, content_type)
+        response = await run_in_threadpool(VoiceService.transcribe_audio, audio_bytes, content_type)
         return response
 
     except AudioValidationError as e:

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Search, Bell, Sparkles } from 'lucide-react';
+import { Menu, Search, Sparkles } from 'lucide-react';
 import { HealthResponse } from '../../types/api';
 
 interface HeaderProps {
@@ -159,21 +159,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenMobileMenu, health }) => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <button
               type="submit"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-indigo-600 hover:text-indigo-800 rounded-lg transition-colors"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-indigo-600 hover:text-indigo-800 rounded-lg transition-colors cursor-pointer"
               title="Search or Ask AI"
             >
               <Sparkles className="w-3.5 h-3.5" />
             </button>
           </form>
-
-          {/* Notifications Button */}
-          <button
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200/60 relative transition-colors"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            <span className="w-2 h-2 rounded-full bg-indigo-600 absolute top-2 right-2 border-2 border-white" />
-          </button>
 
           {/* User Profile Avatar */}
           <div className="flex items-center space-x-2.5 pl-2 border-l border-slate-200/80">
