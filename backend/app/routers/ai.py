@@ -4,7 +4,14 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from backend.app.config import settings
 from backend.app.limiter import limiter
-from backend.app.schemas.ai import AIAuditLogItem, AskAIRequest, AskAIResponse, SQLAskResponse
+from backend.app.schemas.ai import (
+    AIAuditLogItem,
+    AskAIRequest,
+    AskAIResponse,
+    SQLAskResponse,
+    SQLRerunRequest,
+    SQLRerunResponse,
+)
 from backend.app.services.ai_service import AIService
 from backend.app.services.text_to_sql_service import TextToSQLService
 from backend.app.services.audit_service import AIAuditService
@@ -100,6 +107,32 @@ def ask_sql_question(request: Request, payload: AskAIRequest) -> SQLAskResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while processing your dynamic SQL request. Please try again."
         )
+
+
+@router.post(
+    "/rerun",
+    response_model=SQLRerunResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Re-run a pinned Olist query through AST validator and read-only DB (zero LLM)"
+)
+@limiter.limit(settings.RATE_LIMIT_AI_ASK)
+def rerun_pinned_query(request: Request, payload: SQLRerunRequest) -> SQLRerunResponse:
+    try:
+        res = TextToSQLService.rerun_olist_pin(
+            route=payload.route,
+            intent=payload.intent,
+            sql=payload.sql,
+        )
+        return SQLRerunResponse(**res)
+    except QueryTimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
+    except DatabaseUnavailableError:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in POST /ai/rerun: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to re-run pinned query.")
 
 
 @router.get(

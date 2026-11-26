@@ -477,6 +477,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
                 return SQLAskResponse(
                     question=question,
                     route="intent",
+                    intent=intent,
                     sql=None,
                     explanation=answer,
                     assumptions=[f"Routed via canonical analytics layer ({intent}) with {confidence:.0%} confidence."],
@@ -908,3 +909,106 @@ You must respond ONLY with a valid JSON object matching the following schema:
         )
         cls._dataset_ask_cache[cache_key] = resp
         return resp
+
+    @classmethod
+    def rerun_olist_pin(
+        cls,
+        route: str,
+        intent: Optional[str] = None,
+        sql: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Re-runs a pinned Olist query through either the intent router or SQLValidator + readonly_engine."""
+        start_time = time.time()
+        if route == "intent":
+            if not intent or intent not in SUPPORTED_INTENTS:
+                raise ValueError(f"Unsupported or missing intent '{intent}' for pinned intent query.")
+            evidence_dict = AIAnalyticsRouter.route_intent(intent)
+            data = evidence_dict.get("data")
+            rows = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
+            cols = list(rows[0].keys()) if rows and isinstance(rows[0], dict) else []
+            return {
+                "rows": rows[:500],
+                "columns": cols,
+                "row_count": len(rows[:500]),
+                "sql": None,
+                "execution_time_ms": round((time.time() - start_time) * 1000.0, 2),
+            }
+
+        if not sql or not sql.strip():
+            raise ValueError("SQL query is required to re-run a pinned SQL card.")
+
+        is_valid, sanitized_sql, val_error = SQLValidator.validate(sql)
+        if not is_valid:
+            raise ValueError(f"Pinned SQL rejected by security validator: {val_error}")
+
+        rows, cols = cls.execute_guarded_sql(sanitized_sql)
+        return {
+            "rows": rows,
+            "columns": cols,
+            "row_count": len(rows),
+            "sql": sanitized_sql,
+            "execution_time_ms": round((time.time() - start_time) * 1000.0, 2),
+        }
+
+    @classmethod
+    def rerun_dataset_pin(
+        cls,
+        dataset_id: str,
+        sql: str,
+        owner_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Re-runs a pinned custom-dataset SQL query with owner-token isolation and AST validation."""
+        start_time = time.time()
+        if not sql or not sql.strip():
+            raise ValueError("SQL query is required to re-run a pinned dataset card.")
+
+        profile = DatasetService.get_dataset_profile(dataset_id, owner_token=owner_token)
+        schema_name = profile.schema_name
+        is_demo = (schema_name == "insightforge")
+
+        sql_context = DatasetSQLContext(
+            schema_name=schema_name,
+            allowed_tables={t.safe_name for t in profile.tables},
+            relationships=[r.model_dump() for r in profile.relationships],
+            table_columns={t.safe_name: {c.safe_name for c in t.columns} for t in profile.tables},
+            is_demo=is_demo,
+        )
+
+        is_valid, sanitized_sql, val_error = SQLValidator.validate(sql, context=sql_context)
+        if not is_valid:
+            raise ValueError(f"Pinned SQL rejected by security validator: {val_error}")
+
+        if is_fixture_mode():
+            rows, cols = [], []
+        else:
+            with readonly_engine.connect() as conn:
+                with conn.begin():
+                    if not is_demo and schema_name.startswith("ds_"):
+                        role_name = f"dsr_{schema_name[3:]}"
+                        try:
+                            conn.execute(text(f'SET LOCAL ROLE "{role_name}";'))
+                        except Exception as e:
+                            logger.debug(f"Could not SET LOCAL ROLE {role_name}: {e}")
+                    conn.execute(text(f'SET LOCAL search_path = "{schema_name}", public;'))
+                    result = conn.execute(text(sanitized_sql))
+                    cols = list(result.keys())
+                    raw_rows = [dict(zip(cols, row)) for row in result.fetchmany(500)]
+                    rows = []
+                    for r in raw_rows:
+                        clean_r = {}
+                        for k, v in r.items():
+                            if hasattr(v, "isoformat"):
+                                clean_r[k] = v.isoformat()
+                            elif isinstance(v, (int, float, str, bool)) or v is None:
+                                clean_r[k] = v
+                            else:
+                                clean_r[k] = float(v) if "Decimal" in type(v).__name__ else str(v)
+                        rows.append(clean_r)
+
+        return {
+            "rows": rows,
+            "columns": cols,
+            "row_count": len(rows),
+            "sql": sanitized_sql,
+            "execution_time_ms": round((time.time() - start_time) * 1000.0, 2),
+        }

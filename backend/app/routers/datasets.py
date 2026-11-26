@@ -12,6 +12,7 @@ from backend.app.schemas.dataset import (
     UpdateDatasetRequest,
     UploadDatasetResponse,
 )
+from backend.app.schemas.ai import SQLRerunRequest, SQLRerunResponse
 from backend.app.schemas.dataset_semantic import (
     DatasetAskRequest,
     DatasetAskResponse,
@@ -381,6 +382,39 @@ def ask_dataset(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to execute dataset ask for {dataset_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post(
+    "/{dataset_id}/rerun",
+    response_model=SQLRerunResponse,
+    summary="Re-run a pinned custom dataset SQL query through AST validator and tenant-isolated DB (zero LLM)"
+)
+@limiter.limit(settings.RATE_LIMIT_AI_ASK)
+def rerun_dataset_pin(
+    request: Request,
+    dataset_id: str,
+    req: SQLRerunRequest,
+    x_owner_token: Optional[str] = Header(None, alias="X-Owner-Token", description="Owner token"),
+):
+    _check_live_db()
+    try:
+        res = TextToSQLService.rerun_dataset_pin(
+            dataset_id=dataset_id,
+            sql=req.sql or "",
+            owner_token=x_owner_token,
+        )
+        return SQLRerunResponse(**res)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except QueryTimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
+    except DatabaseUnavailableError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to re-run pinned query for {dataset_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 

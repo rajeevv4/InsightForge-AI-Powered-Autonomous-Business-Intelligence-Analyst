@@ -8,6 +8,7 @@ import { DataQualityPage } from './pages/DataQualityPage';
 import { AnomaliesPage } from './pages/AnomaliesPage';
 import { ForecastPage } from './pages/ForecastPage';
 import { ReportPage } from './pages/ReportPage';
+import { BoardPage } from './pages/BoardPage';
 import { DatasetsPage } from './pages/DatasetsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
@@ -34,6 +35,7 @@ export const App: React.FC = () => {
           <Route path="/" element={<AppLayout />}>
             <Route index element={<DatasetAware olist={<OverviewPage />} custom={<CustomOverview />} />} />
             <Route path="ask" element={<AskPage />} />
+            <Route path="board" element={<BoardPage />} />
             <Route path="analytics" element={<DatasetAware olist={<AnalyticsPage />} custom={<CustomAnalytics />} />} />
             <Route path="customers" element={<DatasetAware olist={<AnalyticsPage initialTab="geography" />} custom={<CustomPagePlaceholder page="Customers" olistOnly />} />} />
             <Route path="products" element={<DatasetAware olist={<AnalyticsPage initialTab="products" />} custom={<CustomPagePlaceholder page="Products" olistOnly />} />} />

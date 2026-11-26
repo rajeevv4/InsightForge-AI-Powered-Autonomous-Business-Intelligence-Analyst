@@ -28,8 +28,10 @@ import {
   Edit3,
   LayoutDashboard,
   MessageSquare,
-  X
+  X,
+  Bookmark
 } from 'lucide-react';
+import { addPinnedCard, isQuestionPinned } from '../lib/pinnedBoard';
 import {
   ResponsiveContainer,
   BarChart,
@@ -130,6 +132,7 @@ export const AskInsightForge: React.FC = () => {
   const [showTable, setShowTable] = useState<boolean>(true);
   const [chartOverride, setChartOverride] = useState<'bar' | 'line' | 'pie' | 'table' | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationTurn[]>([]);
+  const [pinSaved, setPinSaved] = useState<boolean>(false);
 
   // Voice & Multilingual State
   const [selectedLanguage, setSelectedLanguage] = useState<'auto' | 'hi' | 'en'>('auto');
@@ -277,9 +280,10 @@ export const AskInsightForge: React.FC = () => {
         setOlistResponse(result);
         setConversationHistory((prev) => [
           ...prev.slice(-4),
-          { question: targetQuestion, sql: result.sql || null, intent: result.route === 'intent' ? 'intent' : null }
+          { question: targetQuestion, sql: result.sql || null, intent: result.intent || null }
         ]);
       }
+      setPinSaved(isQuestionPinned(targetQuestion, selectedDatasetId));
     } catch (err: any) {
       console.error('Failed to query AI:', err);
       const is503 = err?.response?.status === 503;
@@ -868,15 +872,51 @@ export const AskInsightForge: React.FC = () => {
                   </button>
                 ) : <div />}
 
-                {rows.length > 0 && (
+                <div className="flex items-center space-x-3">
                   <button
-                    onClick={() => setShowTable(!showTable)}
-                    className="flex items-center space-x-1 font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                    type="button"
+                    onClick={() => {
+                      if (!activeResponse) return;
+                      const canPin = isCustomDataset
+                        ? Boolean(activeResponse.sql)
+                        : Boolean(activeResponse.sql || olistResponse?.intent);
+                      if (!canPin) return;
+                      addPinnedCard({
+                        question: activeResponse.question,
+                        route: isCustomDataset ? 'text_to_sql' : (olistResponse?.route || 'text_to_sql'),
+                        intent: isCustomDataset ? null : (olistResponse?.intent || null),
+                        sql: activeResponse.sql || null,
+                        dataset_id: selectedDatasetId,
+                        dataset_name: isCustomDataset ? (selectedDataset?.name || 'Uploaded Dataset') : 'Olist Demo',
+                        chart_spec: activeChartType,
+                      });
+                      setPinSaved(true);
+                    }}
+                    disabled={
+                      pinSaved ||
+                      (!activeResponse.sql && (isCustomDataset || !olistResponse?.intent))
+                    }
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
+                      pinSaved
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 disabled:opacity-40'
+                    }`}
+                    title="Pin query spec & chart to My Board (no rows stored)"
                   >
-                    <TableIcon className="w-3.5 h-3.5" />
-                    <span>{showTable ? 'Hide Table' : `Show Records (${rows.length})`}</span>
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>{pinSaved ? 'Pinned ✓' : 'Pin to Board'}</span>
                   </button>
-                )}
+
+                  {rows.length > 0 && (
+                    <button
+                      onClick={() => setShowTable(!showTable)}
+                      className="flex items-center space-x-1 font-semibold text-slate-600 hover:text-slate-900 transition cursor-pointer"
+                    >
+                      <TableIcon className="w-3.5 h-3.5" />
+                      <span>{showTable ? 'Hide Table' : `Show Records (${rows.length})`}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* SQL Code Block */}

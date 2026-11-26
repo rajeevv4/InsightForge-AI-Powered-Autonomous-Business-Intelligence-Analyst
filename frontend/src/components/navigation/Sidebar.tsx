@@ -22,7 +22,8 @@ import {
   Database,
   Table2,
   LineChart,
-  FileText
+  FileText,
+  Bookmark
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     { name: 'Overview', path: '/', icon: LayoutDashboard },
     { name: 'Datasets', path: '/datasets', icon: Database },
     { name: 'Ask InsightForge', path: '/ask', icon: Sparkles },
+    { name: 'My Board', path: '/board', icon: Bookmark },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
     { name: 'Customers', path: '/customers', icon: Users },
     { name: 'Products', path: '/products', icon: ShoppingBag },
@@ -84,12 +86,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
       });
   }, [isOlist, activeReady, activeDatasetId]);
 
-  const CORE_KEYS_BEFORE = ['overview', 'datasets', 'ask', 'analytics'];
+  const CORE_KEYS_BEFORE = ['overview', 'datasets', 'ask', 'board', 'analytics'];
   const CORE_KEYS_AFTER = ['data_quality', 'anomalies', 'forecast', 'report'];
   const CORE_FALLBACK: Record<string, { name: string; path: string }> = {
     overview: { name: 'Overview', path: '/' },
     datasets: { name: 'Datasets', path: '/datasets' },
     ask: { name: 'Ask InsightForge', path: '/ask' },
+    board: { name: 'My Board', path: '/board' },
     analytics: { name: 'Analytics', path: '/analytics' },
     data_quality: { name: 'Data Quality', path: '/data-quality' },
     anomalies: { name: 'Anomalies', path: '/anomalies' },
@@ -100,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) =
     overview: LayoutDashboard,
     datasets: Database,
     ask: Sparkles,
+    board: Bookmark,
     analytics: BarChart3,
     geography: MapPin,
     sellers: Store,

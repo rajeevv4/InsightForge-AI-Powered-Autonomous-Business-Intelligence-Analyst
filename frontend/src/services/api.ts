@@ -15,6 +15,8 @@ import {
   AnomalyScanRequest,
   AnomalyScanResponse,
   SQLAskResponse,
+  SQLRerunRequest,
+  SQLRerunResponse,
   VoiceTranscribeResponse,
   DatasetSummary,
   DatasetProfile,
@@ -114,6 +116,20 @@ export const api = {
       payload.history = history;
     }
     const res = await client.post<SQLAskResponse>('/ai/sql-ask', payload, { timeout: 60000 });
+    return res.data;
+  },
+
+  rerunOlistPin: async (payload: SQLRerunRequest): Promise<SQLRerunResponse> => {
+    const res = await client.post<SQLRerunResponse>('/ai/rerun', payload, { timeout: 45000 });
+    return res.data;
+  },
+
+  rerunDatasetPin: async (id: string, sql: string): Promise<SQLRerunResponse> => {
+    const res = await client.post<SQLRerunResponse>(
+      `/datasets/${id}/rerun`,
+      { route: 'text_to_sql', sql },
+      { headers: { 'X-Owner-Token': getOwnerToken() }, timeout: 45000 }
+    );
     return res.data;
   },
 

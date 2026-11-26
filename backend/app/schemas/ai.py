@@ -55,6 +55,7 @@ class AskAIResponse(BaseModel):
 class SQLAskResponse(BaseModel):
     question: str = Field(..., description="The original business query")
     route: str = Field(..., description="'intent' if handled by deterministic router; 'text_to_sql' if handled by guarded SQL engine")
+    intent: Optional[str] = Field(default=None, description="Resolved intent name when route='intent'")
     sql: Optional[str] = Field(default=None, description="The validated and executed SQL query (if text_to_sql route)")
     explanation: str = Field(..., description="Synthesized grounded answer")
     assumptions: Optional[List[str]] = Field(default=None, description="Assumptions or filters applied during SQL construction")
@@ -65,6 +66,20 @@ class SQLAskResponse(BaseModel):
     grounding_verified: bool = Field(default=True, description="True if output numbers are faithful to row evidence")
     suggested_chart: Optional[str] = Field(default=None, description="Suggested visualization ('bar', 'line', 'pie', 'table')")
     error: Optional[str] = Field(default=None, description="Error or diagnostic detail if query failed")
+
+
+class SQLRerunRequest(BaseModel):
+    route: str = Field(default="text_to_sql", pattern="^(intent|text_to_sql)$", description="Execution route ('intent' or 'text_to_sql')")
+    intent: Optional[str] = Field(default=None, max_length=100, description="Canonical intent name when route='intent'")
+    sql: Optional[str] = Field(default=None, max_length=4000, description="SQL SELECT query to re-validate and execute")
+
+
+class SQLRerunResponse(BaseModel):
+    rows: List[Dict[str, Any]] = Field(default_factory=list)
+    columns: List[str] = Field(default_factory=list)
+    row_count: int = 0
+    sql: Optional[str] = None
+    execution_time_ms: float = 0.0
 
 
 class AIAuditLogItem(BaseModel):

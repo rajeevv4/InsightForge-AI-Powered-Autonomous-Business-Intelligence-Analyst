@@ -124,6 +124,7 @@ export interface AskAIResponse {
 export interface SQLAskResponse {
   question: string;
   route: 'intent' | 'text_to_sql';
+  intent?: string | null;
   sql?: string | null;
   explanation: string;
   assumptions?: string[] | null;
@@ -134,6 +135,32 @@ export interface SQLAskResponse {
   grounding_verified: boolean;
   suggested_chart?: 'bar' | 'line' | 'pie' | 'table' | null;
   error?: string | null;
+}
+
+export interface SQLRerunRequest {
+  route: 'intent' | 'text_to_sql';
+  intent?: string | null;
+  sql?: string | null;
+}
+
+export interface SQLRerunResponse {
+  rows: Record<string, any>[];
+  columns: string[];
+  row_count: number;
+  sql?: string | null;
+  execution_time_ms: number;
+}
+
+export interface PinnedCardSpec {
+  id: string;
+  question: string;
+  route: 'intent' | 'text_to_sql';
+  intent?: string | null;
+  sql?: string | null;
+  dataset_id: string;
+  dataset_name: string;
+  chart_spec: 'bar' | 'line' | 'pie' | 'table';
+  pinned_at: string;
 }
 
 export interface VoiceTranscribeResponse {
