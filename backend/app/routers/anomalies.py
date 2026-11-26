@@ -12,6 +12,9 @@ from backend.app.schemas.anomaly import (
     AnomalyScanResponse
 )
 from backend.app.services.anomaly_service import AnomalyService
+from backend.app.schemas.anomaly_explain import AnomalyExplanationResponse
+from backend.app.services.anomaly_explain_service import OlistAnomalyExplainService
+from backend.app.services.dataset_file_parser import FileValidationError
 from backend.app.services.audit_service import AIAuditService
 
 logger = logging.getLogger(__name__)
@@ -104,3 +107,25 @@ def trigger_anomaly_scan(
             error=str(e)
         )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to run anomaly scan")
+
+
+@router.get("/explain", response_model=AnomalyExplanationResponse, status_code=status.HTTP_200_OK,
+            summary="Explain an Olist anomaly: which category / state / seller / payment type drove it (deterministic)")
+@limiter.limit(settings.RATE_LIMIT_ANOMALY_EXPLAIN)
+def explain_anomaly(
+    request: Request,
+    metric: str = Query(default="gross_revenue", description="Anomaly metric"),
+    period: str = Query(..., description="Anomaly period: YYYY-MM-DD (or YYYY-Www for weekly)"),
+    grain: str = Query(default="daily", description="daily | weekly"),
+) -> AnomalyExplanationResponse:
+    try:
+        return OlistAnomalyExplainService.explain(metric=metric, period=period, grain=grain)
+    except FileValidationError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except QueryTimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
+    except DatabaseUnavailableError:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+    except Exception as e:
+        logger.error(f"Unexpected error in GET /anomalies/explain: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to explain anomaly")

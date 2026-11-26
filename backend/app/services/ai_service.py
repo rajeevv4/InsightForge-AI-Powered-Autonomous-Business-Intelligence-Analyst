@@ -247,10 +247,17 @@ SUPPORTED INTENTS:
 
 If the question is completely unrelated to business intelligence, e-commerce, or these domains, set intent to "unknown" and confidence below 0.50.
 
+Also decide "canned_answerable": each intent maps to ONE fixed pre-built summary (e.g. category_analysis = top categories ranked by revenue;
+delivery_analysis = overall on-time vs late percentages and average delivery days). Set it to true ONLY if that fixed summary
+directly answers the question as asked. Set it to false if the question needs anything the summary does not contain: a filter
+(e.g. "orders with more than 3 items", "in 2017", "for state SP"), a different metric (e.g. review score when the summary ranks revenue),
+a breakdown along another dimension (e.g. late deliveries PER STATE), a specific top-N/sort/threshold, or a join across topics.
+
 Respond strictly in valid JSON format:
 {{
     "intent": "<one of the 9 supported intents or unknown>",
     "confidence": <float between 0.0 and 1.0>,
+    "canned_answerable": true | false,
     "reason": "<short explanation>",
     "language": "en" | "hi" | "hinglish"
 }}
@@ -281,7 +288,11 @@ User Question: "{question}"
             if intent not in SUPPORTED_INTENTS:
                 intent = "unknown"
 
-            return {"intent": intent, "confidence": confidence, "reason": reason, "language": res_lang}
+            # Missing/garbled flag -> True keeps the previous routing behaviour.
+            canned_answerable = parsed.get("canned_answerable", True) is not False
+
+            return {"intent": intent, "confidence": confidence, "reason": reason, "language": res_lang,
+                    "canned_answerable": canned_answerable}
 
         except Exception as e:
             if raise_on_error:

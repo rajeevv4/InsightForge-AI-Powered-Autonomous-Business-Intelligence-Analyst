@@ -26,6 +26,21 @@ logger = logging.getLogger(__name__)
 _INSIGHTS_CACHE: Dict[Tuple[str, str], Tuple[float, DatasetInsightsResponse]] = {}
 INSIGHTS_CACHE_TTL = 300  # 5 minutes
 
+_REVENUE_LIKE_KEYWORDS = ["amount", "revenue", "sales", "total", "price"]
+
+
+def select_main_measure(numeric_measures: List[Any]) -> Any:
+    """
+    Measure used for the Trend over Time / Top Rankings charts.
+    Prefers the first revenue/amount-like SUM measure; otherwise keeps the previous
+    behaviour (first numeric measure). Caller guarantees the list is non-empty.
+    """
+    for m in numeric_measures:
+        name = (m.column or "").lower()
+        if (m.aggregation or "").upper() == "SUM" and any(k in name for k in _REVENUE_LIKE_KEYWORDS):
+            return m
+    return numeric_measures[0]
+
 
 class DatasetInsightsService:
     """
@@ -128,7 +143,7 @@ class DatasetInsightsService:
         # 1. Select primary measure (numeric column)
         numeric_measures = [m for m in model.measures if m.column is not None]
         if numeric_measures:
-            main_measure = numeric_measures[0]
+            main_measure = select_main_measure(numeric_measures)
             t_name = main_measure.table
         else:
             main_measure = None
@@ -303,54 +318,15 @@ class DatasetInsightsService:
                 except Exception as e:
                     logger.warning(f"Distribution query failed: {e}")
 
-        # 4. Anomaly Detection on time series (>= 30 daily points)
+        # 4. Anomaly detection on the primary measure's daily series.
+        # Uses the shared dataset detector (rolling MAD + STL + IsolationForest, Olist calibration).
+        # The previous inline version read AnomalyItem fields that do not exist, so it was always empty.
         anomalies_list: List[Dict[str, Any]] = []
-        if main_time_col and main_measure and main_measure.column:
-            t_col_name = main_time_col.column
-            m_col_name = main_measure.column
-            agg_fn = main_measure.aggregation.upper()
-            from_clause = f"{t_name}" if is_demo else f"{schema_name}.{t_name}"
-            is_date_type = any(k in main_time_col.data_type.upper() for k in ["TIMESTAMP", "DATE", "TIME"])
-            t_day_expr = (
-                f"DATE_TRUNC('day', {t_col_name})::date"
-                if is_date_type else
-                f"DATE_TRUNC('day', NULLIF({t_col_name}, '')::timestamp)::date"
-            )
-
-            daily_sql = (
-                f"SELECT {t_day_expr}::text AS period, "
-                f"{t_day_expr} AS period_date, "
-                f"{agg_fn}({m_col_name}) AS metric_val "
-                f"FROM {from_clause} WHERE {t_col_name} IS NOT NULL "
-                f"GROUP BY 1, 2 ORDER BY 1 LIMIT 500;"
-            )
-            is_valid, sanitized_sql, _ = SQLValidator.validate(daily_sql, context=sql_context)
-            if is_valid and sanitized_sql:
-                try:
-                    daily_rows = cls.execute_guarded_sql_in_schema(sanitized_sql, schema_name)
-                    if len(daily_rows) >= 30:
-                        df = pd.DataFrame(daily_rows)
-                        df["metric_val"] = pd.to_numeric(df["metric_val"], errors="coerce").fillna(0.0)
-                        # Run rolling z-score
-                        detected = AnomalyService.detect_rolling_zscore(
-                            df=df,
-                            metric="metric_val",
-                            window=14,
-                            threshold=2.5
-                        )
-                        for itm in detected:
-                            anomalies_list.append({
-                                "period": itm.period,
-                                "metric": main_measure.name,
-                                "actual_value": itm.actual_value,
-                                "expected_value": itm.expected_value,
-                                "deviation_pct": itm.deviation_pct,
-                                "severity": itm.severity,
-                                "label": itm.label,
-                                "direction": itm.direction
-                            })
-                except Exception as e:
-                    logger.warning(f"Generic anomaly detection failed for dataset '{dataset_id}': {e}")
+        try:
+            from backend.app.services.dataset_anomaly_service import DatasetAnomalyService  # lazy: avoids import cycle
+            anomalies_list = DatasetAnomalyService.quick_insights_items(dataset_id, owner_token)
+        except Exception as e:
+            logger.warning(f"Generic anomaly detection failed for dataset '{dataset_id}': {e}")
 
         response = DatasetInsightsResponse(
             dataset_id=dataset_id,

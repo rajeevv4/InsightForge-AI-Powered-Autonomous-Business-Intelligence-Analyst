@@ -31,6 +31,10 @@ class Settings:
     RATE_LIMIT_AI_ASK: str = os.getenv("RATE_LIMIT_AI_ASK", "30/minute")
     RATE_LIMIT_VOICE_TRANSCRIBE: str = os.getenv("RATE_LIMIT_VOICE_TRANSCRIBE", "10/minute")
     RATE_LIMIT_DATASET_UPLOAD: str = os.getenv("RATE_LIMIT_DATASET_UPLOAD", "5/hour")
+    # Deterministic analysis endpoints (default to the same limit as /api/ai/ask)
+    RATE_LIMIT_ANOMALY_EXPLAIN: str = os.getenv("RATE_LIMIT_ANOMALY_EXPLAIN", os.getenv("RATE_LIMIT_AI_ASK", "30/minute"))
+    RATE_LIMIT_REPORT: str = os.getenv("RATE_LIMIT_REPORT", "10/hour")
+    RATE_LIMIT_FORECAST: str = os.getenv("RATE_LIMIT_FORECAST", os.getenv("RATE_LIMIT_AI_ASK", "30/minute"))
 
     # Dataset Workspace Limits (Level 5)
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "25"))

@@ -1,4 +1,7 @@
+import { formatMoney } from '../lib/format';
+import { useUi } from '../contexts/UiContext';
 import React, { useState, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Sparkles,
   HelpCircle,
@@ -22,7 +25,8 @@ import {
   Database,
   Layers,
   Check,
-  Edit3
+  Edit3,
+  LayoutDashboard
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,6 +39,7 @@ import {
   Tooltip,
   CartesianGrid
 } from 'recharts';
+import { AnomalyExplainDrawer, ExplainButton, ExplainTarget } from './AnomalyExplainDrawer';
 import { api } from '../services/api';
 import {
   DatasetAskResponse,
@@ -45,6 +50,8 @@ import {
   UpdateDatasetSemanticRequest
 } from '../types/api';
 import { ErrorBanner } from './ErrorBanner';
+import { DatasetDashboard } from './DatasetDashboard';
+import { useActiveDataset } from '../contexts/ActiveDatasetContext';
 
 const OLIST_DEMO_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -75,13 +82,18 @@ const EXAMPLE_QUESTIONS = {
 };
 
 export const AskInsightForge: React.FC = () => {
-  // Datasets State
-  const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string>(OLIST_DEMO_ID);
+  // Shared app-wide selection AND dataset list (header switcher, Overview widget and this dropdown stay in sync)
+  const {
+    activeDatasetId: selectedDatasetId,
+    setActiveDatasetId: setSelectedDatasetId,
+    datasets,
+    refreshDatasets,
+    activeReady,
+  } = useActiveDataset();
   const [selectedDataset, setSelectedDataset] = useState<DatasetSummary | null>(null);
 
   // Tabs: 'ask' | 'insights' | 'semantic'
-  const [activeTab, setActiveTab] = useState<'ask' | 'insights' | 'semantic'>('ask');
+  const [activeTab, setActiveTab] = useState<'ask' | 'insights' | 'semantic' | 'dashboard'>('ask');
 
   // Query State
   const [question, setQuestion] = useState<string>('');
@@ -97,6 +109,8 @@ export const AskInsightForge: React.FC = () => {
   const [insights, setInsights] = useState<DatasetInsightsResponse | null>(null);
   const [insightsLoading, setInsightsLoading] = useState<boolean>(false);
   const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [explainTarget, setExplainTarget] = useState<ExplainTarget | null>(null);
+  const { currency: pickedCurrency } = useUi();
 
   // Semantic Layer State
   const [semantic, setSemantic] = useState<DatasetSemanticResponse | null>(null);
@@ -122,6 +136,8 @@ export const AskInsightForge: React.FC = () => {
   const timerIntervalRef = useRef<number | null>(null);
 
   const isCustomDataset = selectedDatasetId !== OLIST_DEMO_ID;
+  // Latest selected dataset, read by async loaders to discard stale responses.
+  const selectedDatasetIdRef = useRef<string>(selectedDatasetId);
 
   // Load datasets list on mount
   useEffect(() => {
@@ -136,39 +152,43 @@ export const AskInsightForge: React.FC = () => {
     };
   }, []);
 
-  // When selected dataset changes, fetch semantic model and reset state
+  // When selected dataset changes, fetch semantic model and reset state.
+  // Keyed on the id only: the shared list refreshes (e.g. when the header switcher opens)
+  // and that must not wipe the current answer or reload the semantic layer.
   useEffect(() => {
     setError(null);
     setOlistResponse(null);
     setDatasetResponse(null);
     setVoiceNotice(null);
+    // Drop the previous dataset's semantic model so its starter questions never show for this one.
+    setSemantic(null);
+    selectedDatasetIdRef.current = selectedDatasetId;
+    setExplainTarget(null);
 
-    const ds = datasets.find((d) => d.id === selectedDatasetId) || null;
-    setSelectedDataset(ds);
-
-    if (selectedDatasetId !== OLIST_DEMO_ID) {
+    // Only once the uploaded dataset is confirmed to exist (no requests for stale stored ids).
+    if (selectedDatasetId !== OLIST_DEMO_ID && activeReady) {
       loadSemanticLayer(selectedDatasetId);
       loadQuickInsights(selectedDatasetId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDatasetId, activeReady]);
+
+  // Keep the selected dataset's summary (name, share_samples) in step with the shared list.
+  useEffect(() => {
+    setSelectedDataset(datasets.find((d) => d.id === selectedDatasetId) || null);
   }, [selectedDatasetId, datasets]);
 
   const loadDatasetsList = async () => {
-    try {
-      const list = await api.getDatasets();
-      setDatasets(list);
-      const current = list.find((d) => d.id === selectedDatasetId) || list[0];
-      if (current) {
-        setSelectedDataset(current);
-      }
-    } catch (e) {
-      console.warn('Could not load datasets list:', e);
-    }
+    await refreshDatasets();
   };
 
   const loadSemanticLayer = async (dsId: string) => {
     setSemanticLoading(true);
     try {
       const sem = await api.getDatasetSemantic(dsId);
+      // The first fetch can take several seconds (draft + enrichment); ignore it if the
+      // user has switched to another dataset in the meantime.
+      if (selectedDatasetIdRef.current !== dsId) return;
       setSemantic(sem);
     } catch (e: any) {
       console.warn('Could not fetch semantic layer:', e);
@@ -234,6 +254,19 @@ export const AskInsightForge: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Questions submitted from the header search arrive via navigation state.
+  // Keyed on location.key so each search runs once (StrictMode re-runs effects in dev).
+  const location = useLocation();
+  const handledNavKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const incoming = (location.state as { question?: string } | null)?.question;
+    if (incoming && handledNavKeyRef.current !== location.key) {
+      handledNavKeyRef.current = location.key;
+      handleAsk(incoming);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !loading) {
@@ -400,9 +433,8 @@ export const AskInsightForge: React.FC = () => {
     if (typeof val === 'number') {
       const lower = colName.toLowerCase();
       if (lower.includes('price') || lower.includes('revenue') || lower.includes('freight') || lower.includes('amount') || lower.includes('value')) {
-        return !isCustomDataset
-          ? `R$ ${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-          : val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        // Olist: R$; uploads: the currency picked for this dataset (or plain numbers when none)
+        return formatMoney(val, !isCustomDataset ? 'R$' : pickedCurrency);
       }
       return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(2);
     }
@@ -496,7 +528,7 @@ export const AskInsightForge: React.FC = () => {
 
         {/* Tab Switcher for Uploaded Datasets */}
         {isCustomDataset && (
-          <div className="flex border-b border-slate-100 mt-5 pt-3 space-x-6 text-xs font-semibold">
+          <div role="tablist" aria-label="Dataset tools" className="flex border-b border-slate-100 mt-5 pt-3 gap-6 text-xs font-semibold overflow-x-auto whitespace-nowrap -mx-1 px-1">
             <button
               onClick={() => setActiveTab('ask')}
               className={`pb-2.5 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
@@ -532,6 +564,18 @@ export const AskInsightForge: React.FC = () => {
               <Layers className="w-4 h-4" />
               <span>Semantic Layer ({semantic?.status || 'draft'})</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`pb-2.5 flex items-center space-x-2 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'dashboard'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              <span>Dashboard</span>
+            </button>
           </div>
         )}
       </div>
@@ -549,11 +593,14 @@ export const AskInsightForge: React.FC = () => {
                   : 'Suggested Questions (English & Hindi):'}
               </span>
             </div>
+            {/* Olist example chips are only for the built-in demo; custom datasets show their own or a hint. */}
+            {isCustomDataset && !(semantic?.starter_questions && semantic.starter_questions.length > 0) && (
+              <p className="text-xs text-slate-500">
+                {semanticLoading ? 'Preparing starter questions for this dataset…' : 'Type a question about your data.'}
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
-              {(isCustomDataset && semantic?.starter_questions && semantic.starter_questions.length > 0
-                ? semantic.starter_questions
-                : EXAMPLE_QUESTIONS.en
-              ).map((q, idx) => (
+              {(isCustomDataset ? semantic?.starter_questions ?? [] : EXAMPLE_QUESTIONS.en).map((q, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleAsk(q)}
@@ -827,6 +874,11 @@ export const AskInsightForge: React.FC = () => {
       )}
 
       {/* TAB 2: QUICK INSIGHTS & ANOMALIES */}
+      {/* TAB 4: DASHBOARD (uploaded datasets only; Olist keeps its own pages) */}
+      {isCustomDataset && activeTab === 'dashboard' && (
+        <DatasetDashboard key={selectedDatasetId} datasetId={selectedDatasetId} />
+      )}
+
       {isCustomDataset && activeTab === 'insights' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
@@ -984,6 +1036,7 @@ export const AskInsightForge: React.FC = () => {
                       <th className="p-2.5">Deviation</th>
                       <th className="p-2.5">Severity</th>
                       <th className="p-2.5">Direction</th>
+                      <th className="p-2.5">Why?</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1002,6 +1055,12 @@ export const AskInsightForge: React.FC = () => {
                           </span>
                         </td>
                         <td className="p-2.5">{anom.direction}</td>
+                        <td className="p-2.5">
+                          <ExplainButton compact onClick={() => setExplainTarget({
+                            source: { kind: 'dataset', datasetId: selectedDatasetId }, metric: null,
+                            period: anom.period, grain: 'daily',
+                          })} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1118,6 +1177,7 @@ export const AskInsightForge: React.FC = () => {
           </div>
         </div>
       )}
+      <AnomalyExplainDrawer target={explainTarget} onClose={() => setExplainTarget(null)} />
     </div>
   );
 };

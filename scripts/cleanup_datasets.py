@@ -20,6 +20,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from backend.app.database import engine
+from backend.app.services.dataset_service import _exec_in_savepoint
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("cleanup_datasets")
@@ -83,10 +84,9 @@ def cleanup_expired_datasets(dry_run: bool = False) -> int:
                 # 3. Drop defense-in-depth role
                 if schema_name.startswith("ds_"):
                     role_name = f"dsr_{schema_name[3:]}"
-                    try:
-                        cur.execute(sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name)))
-                    except Exception as e:
-                        logger.debug(f"Could not drop role {role_name}: {e}")
+                    # SAVEPOINT: a failed DROP ROLE must not abort (and roll back) the whole batch.
+                    if not _exec_in_savepoint(cur, sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier(role_name))):
+                        logger.warning(f"Could not drop role {role_name}")
 
                 purged_count += 1
 

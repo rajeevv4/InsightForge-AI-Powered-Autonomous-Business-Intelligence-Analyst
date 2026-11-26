@@ -582,6 +582,7 @@ class AnomalyService:
         Cold start excluded, small samples filtered, and dimension slice outliers separated.
         """
         cache_key = (dataset_id, grain, metric, severity)
+        df_supplied = df is not None
         if df is None:
             now = time.time()
             with cls._cache_lock:
@@ -690,8 +691,12 @@ class AnomalyService:
             slice_outliers=iqr_anomalies
         )
 
-        with cls._cache_lock:
-            cls._detect_cache[cache_key] = (time.time(), response)
+        # Only cache results this call fetched itself. Callers that pass df/iqr_anomalies
+        # (run_full_scan passes iqr_anomalies=[]) must not overwrite the page's cache entry,
+        # and run_full_scan post-processes the returned items.
+        if not df_supplied:
+            with cls._cache_lock:
+                cls._detect_cache[cache_key] = (time.time(), response)
 
         return response
 
@@ -719,30 +724,16 @@ class AnomalyService:
             )
             all_detected.extend(res.anomalies)
 
-        # Multi-metric deduplication and cross-method severity calibration
-        period_methods = defaultdict(set)
-        period_max_dev = defaultdict(float)
-        for a in all_detected:
-            k_period = (a.metric, a.period)
-            period_methods[k_period].add(a.method)
-            if abs(a.deviation_score) > abs(period_max_dev[k_period]):
-                period_max_dev[k_period] = a.deviation_score
-
+        # Multi-metric deduplication. Severity is kept exactly as detect_all calibrated it:
+        # detect_all already returns one item per (metric, dimension, period), so re-counting
+        # methods here would see a single method per period and wrongly downgrade
+        # multi-method detections (e.g. 2018-05-16, dev 11.15: HIGH -> MEDIUM).
         seen = set()
         deduped = []
         for a in all_detected:
             k = (a.metric, a.dimension, a.period)
             if k not in seen:
                 seen.add(k)
-                k_period = (a.metric, a.period)
-                m_count = len(period_methods[k_period])
-                dev_mag = abs(period_max_dev[k_period])
-                if (m_count >= 2 and dev_mag >= 8.0) or (dev_mag >= 12.0):
-                    a.severity = "high"
-                elif (m_count >= 2 and dev_mag >= 2.5) or (dev_mag >= 4.0):
-                    a.severity = "medium"
-                else:
-                    a.severity = "low"
 
                 if a.known_event_candidate:
                     a.classification = a.known_event_candidate

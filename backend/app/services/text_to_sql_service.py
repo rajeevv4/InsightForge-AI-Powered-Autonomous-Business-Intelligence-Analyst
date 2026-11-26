@@ -401,8 +401,11 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         if classification.get("language"):
             language = classification["language"]
 
-        # Check routing policy: intent confidence >= 0.80 routes to intent router
-        if confidence >= 0.80 and intent in SUPPORTED_INTENTS:
+        # Check routing policy: intent confidence >= 0.80 routes to intent router, unless the
+        # classifier says the intent's fixed summary does not answer this specific question
+        # (filters, other metrics, other breakdowns) -> guarded Text-to-SQL instead.
+        canned_answerable = classification.get("canned_answerable", True)
+        if confidence >= 0.80 and intent in SUPPORTED_INTENTS and canned_answerable:
             try:
                 evidence_dict = AIAnalyticsRouter.route_intent(intent)
                 answer = AIService.synthesize_explanation_heuristic(question, evidence_dict, language=language)

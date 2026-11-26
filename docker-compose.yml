@@ -13,7 +13,9 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./database/views.sql:/docker-entrypoint-initdb.d/02_views.sql:ro
-      - ./database/roles.sql:/docker-entrypoint-initdb.d/03_roles.sql:ro
+      - ./database/migrations/001_create_datasets_metadata.sql:/docker-entrypoint-initdb.d/03_datasets_metadata.sql:ro
+      - ./database/migrations/002_create_dataset_semantic.sql:/docker-entrypoint-initdb.d/04_dataset_semantic.sql:ro
+      - ./database/roles.sql:/docker-entrypoint-initdb.d/05_roles.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d insightforge"]
       interval: 5s

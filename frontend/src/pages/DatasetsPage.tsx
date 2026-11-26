@@ -18,6 +18,11 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useActiveDataset } from '../contexts/ActiveDatasetContext';
+import { useNavigate } from 'react-router-dom';
+import { useUi } from '../contexts/UiContext';
+import { Confetti, InfoTip } from '../components/ui';
+import { readableName } from '../lib/format';
 import {
   DatasetSummary,
   DatasetProfile,
@@ -27,6 +32,18 @@ import {
 } from '../types/api';
 
 export const DatasetsPage: React.FC = () => {
+  const { refreshDatasets: refreshActiveDatasets, setActiveDatasetId } = useActiveDataset();
+  const navigate = useNavigate();
+  const [justUploaded, setJustUploaded] = useState<{ id: string; name: string } | null>(null);
+  const [celebrate, setCelebrate] = useState(false);
+  const { toast } = useUi();
+
+  // After a successful upload: make it the active dataset and open the Report page (auto-generates).
+  const generateReportFor = async (id: string) => {
+    await refreshActiveDatasets();
+    setActiveDatasetId(id);
+    navigate('/report?autogen=1');
+  };
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>('00000000-0000-0000-0000-000000000001');
   const [profile, setProfile] = useState<DatasetProfile | null>(null);
@@ -56,6 +73,8 @@ export const DatasetsPage: React.FC = () => {
       setError(null);
       const data = await api.getDatasets();
       setDatasets(data);
+      // Keep the app-wide dataset switcher in sync after uploads/deletes.
+      void refreshActiveDatasets();
       if (data.length > 0) {
         const targetId = selectId || (data.some(d => d.id === selectedDatasetId) ? selectedDatasetId : data[0].id);
         setSelectedDatasetId(targetId);
@@ -116,8 +135,12 @@ export const DatasetsPage: React.FC = () => {
       setUploadDatasetName('');
       setUploadShareSamples(false);
       await loadDatasets(res.dataset_id);
+      setJustUploaded({ id: res.dataset_id, name: res.name });
+      setCelebrate(true);
+      toast('success', 'Dataset uploaded', `"${res.name}" was loaded and profiled (${res.tables_count} tables, ${res.total_rows.toLocaleString()} rows).`);
     } catch (err: any) {
       setUploadError(err?.response?.data?.detail || 'Failed to upload and profile dataset.');
+      toast('error', 'Upload failed', err?.response?.data?.detail || 'Failed to upload and profile dataset.');
     } finally {
       setUploading(false);
     }
@@ -204,15 +227,16 @@ export const DatasetsPage: React.FC = () => {
   const currentTable: TableProfile | undefined = profile?.tables?.[activeTableIndex];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6">
+      <Confetti show={celebrate} onDone={() => setCelebrate(false)} />
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 bg-brand-gradient text-white rounded-xl shadow-glow shrink-0">
               <Database className="w-6 h-6" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dataset Workspace</h1>
               <p className="text-sm text-slate-500">
                 Upload tabular files (CSV, TSV, XLSX) into isolated schemas with deterministic zero-LLM profiling.
@@ -221,8 +245,9 @@ export const DatasetsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button
+            aria-label="Refresh datasets"
             onClick={() => loadDatasets(selectedDatasetId)}
             className="p-2 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-sm"
             title="Refresh Datasets"
@@ -231,13 +256,26 @@ export const DatasetsPage: React.FC = () => {
           </button>
           <button
             onClick={() => setUploadModalOpen(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition shadow-sm"
+            className="flex items-center space-x-2 px-4 py-2 bg-brand-gradient text-white rounded-lg font-medium shadow-soft hover:shadow-glow transition cursor-pointer"
           >
             <Upload className="w-4 h-4" />
             <span>Upload Dataset</span>
           </button>
         </div>
       </div>
+
+      {justUploaded && (
+        <div className="animate-pop p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" /><span className="min-w-0"><span className="font-semibold">"{justUploaded.name}" was uploaded and profiled.</span> Get a full report of it in one click.</span></div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => generateReportFor(justUploaded.id)}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer">
+              Generate report
+            </button>
+            <button onClick={() => setJustUploaded(null)} className="text-xs text-emerald-700 hover:underline cursor-pointer">Dismiss</button>
+          </div>
+        </div>
+      )}
 
       {/* Error alert */}
       {error && (
@@ -251,32 +289,34 @@ export const DatasetsPage: React.FC = () => {
       )}
 
       {/* Dataset Picker Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
         {datasets.map((ds) => {
           const isSelected = ds.id === selectedDatasetId;
           return (
             <div
               key={ds.id}
               onClick={() => setSelectedDatasetId(ds.id)}
-              className={`p-4 rounded-xl border cursor-pointer transition relative ${
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedDatasetId(ds.id); } }}
+              className={`p-4 rounded-xl border cursor-pointer transition relative min-w-0 card-lift ${
                 isSelected
-                  ? 'bg-blue-50/50 border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                  : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                  ? 'bg-indigo-50/50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-sm'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-slate-900 truncate max-w-[150px]">{ds.name}</span>
-                  {ds.is_demo && (
-                    <span className="px-1.5 py-0.5 text-xs font-semibold bg-emerald-100 text-emerald-800 rounded">
-                      Demo
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs px-2 py-0.5 font-mono bg-slate-100 text-slate-600 rounded">
-                  {ds.schema_name}
-                </span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-slate-900 truncate min-w-0" title={ds.name}>{ds.name}</span>
+                {ds.is_demo && (
+                  <span className="shrink-0 px-1.5 py-0.5 text-2xs font-semibold bg-emerald-100 text-emerald-800 rounded">
+                    Demo
+                  </span>
+                )}
               </div>
+              <span className="mt-1 inline-block max-w-full truncate text-2xs px-2 py-0.5 font-mono bg-slate-100 text-slate-600 rounded" title={ds.schema_name}>
+                {ds.schema_name}
+              </span>
 
               <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
                 <span>{ds.table_count} table{ds.table_count !== 1 ? 's' : ''}</span>
@@ -304,8 +344,8 @@ export const DatasetsPage: React.FC = () => {
         <div className="space-y-6">
           {/* Metadata Toolbar */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-lg font-bold text-slate-900">{profile.name}</span>
+            <div className="flex flex-wrap items-center gap-3 min-w-0">
+              <span className="text-lg font-bold text-slate-900 break-words min-w-0">{profile.name}</span>
               <span className="px-2.5 py-1 text-xs font-mono font-medium bg-slate-100 text-slate-700 rounded-md border border-slate-200">
                 Schema: {profile.schema_name}
               </span>
@@ -319,7 +359,7 @@ export const DatasetsPage: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-wrap items-center gap-4">
               {/* Privacy Toggle: Share with AI */}
               {!profile.is_demo && (
                 <label className="flex items-center space-x-2.5 cursor-pointer select-none">
@@ -372,27 +412,29 @@ export const DatasetsPage: React.FC = () => {
               <div className="flex items-center space-x-2 text-sm font-bold text-slate-900">
                 <Layers className="w-4 h-4 text-indigo-600" />
                 <span>Inferred Cross-Table Relationships ({profile.relationships.length})</span>
+                <InfoTip term="N:1" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {profile.relationships.map((rel, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg flex items-center justify-between text-xs"
+                    className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs min-w-0"
                   >
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono font-semibold text-slate-800">{rel.parent_table}.{rel.parent_column}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="font-mono font-semibold text-slate-800">{rel.child_table}.{rel.child_column}</span>
-                      <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 flex-1">
+                      <span className="font-mono font-semibold text-slate-800 break-all min-w-0" title={`${rel.parent_table}.${rel.parent_column}`}>{rel.parent_table}.{rel.parent_column}</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-label="links to" />
+                      <span className="font-mono font-semibold text-slate-800 break-all min-w-0" title={`${rel.child_table}.${rel.child_column}`}>{rel.child_table}.{rel.child_column}</span>
+                      <span className="shrink-0 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded">
                         {rel.cardinality}
                       </span>
-                      <span className="text-slate-400">({Math.round(rel.confidence * 100)}% match)</span>
+                      <span className="shrink-0 text-slate-400">({Math.round(rel.confidence * 100)}% match)</span>
                     </div>
 
                     {!profile.is_demo && (
                       <button
                         onClick={() => handleToggleRelationship(idx)}
-                        className={`px-2 py-1 rounded text-xs font-semibold transition ${
+                        aria-pressed={rel.confirmed}
+                        className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                           rel.confirmed
                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                             : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -417,12 +459,13 @@ export const DatasetsPage: React.FC = () => {
                   onClick={() => setActiveTableIndex(idx)}
                   className={`py-3 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition flex items-center space-x-2 ${
                     activeTableIndex === idx
-                      ? 'border-blue-600 text-blue-600 bg-white'
+                      ? 'border-indigo-600 text-indigo-600 bg-white'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
+                  title={tbl.safe_name}
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>{tbl.safe_name}</span>
+                  <span>{readableName(tbl.safe_name)}</span>
                   <span className="px-1.5 py-0.5 text-[10px] bg-slate-200/80 text-slate-700 rounded-full">
                     {tbl.row_count.toLocaleString()} rows
                   </span>
@@ -435,9 +478,10 @@ export const DatasetsPage: React.FC = () => {
                 {/* Table Header Info */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                   <div className="space-y-1">
-                    <div className="flex items-center space-x-3">
-                      <h2 className="text-lg font-bold text-slate-900">{currentTable.safe_name}</h2>
-                      <span className="text-xs text-slate-500">(Source: {currentTable.original_name})</span>
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+                      <h2 className="text-lg font-bold text-slate-900 break-words">{readableName(currentTable.safe_name)}</h2>
+                      <code className="text-2xs font-mono text-slate-500">{currentTable.safe_name}</code>
+                      <span className="text-xs text-slate-500 break-all">(Source: {currentTable.original_name})</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
                       <span><strong>{currentTable.row_count.toLocaleString()}</strong> rows</span>
@@ -477,8 +521,8 @@ export const DatasetsPage: React.FC = () => {
                     <div className="space-y-1.5 text-xs text-amber-800">
                       {currentTable.quality_findings.map((f, i) => (
                         <div key={i} className="flex items-start space-x-2">
-                          <span className="font-semibold capitalize">• [{f.type.replace(/_/g, ' ')}]</span>
-                          <span>{f.message || f.description}</span>
+                          <span className="font-semibold capitalize">• [{(f.type || 'warning').replace(/_/g, ' ')}]</span>
+                          <span>{f.message || f.description || f.warning}</span>
                         </div>
                       ))}
                     </div>
@@ -569,8 +613,8 @@ export const DatasetsPage: React.FC = () => {
 
       {/* Upload Modal */}
       {uploadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 animate-scale-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-lg font-bold text-slate-900">Upload Tabular Dataset</h3>
               <button
@@ -676,8 +720,8 @@ export const DatasetsPage: React.FC = () => {
 
       {/* Table Preview Drawer / Modal */}
       {previewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-fade-in" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col animate-scale-in min-w-0">
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900">

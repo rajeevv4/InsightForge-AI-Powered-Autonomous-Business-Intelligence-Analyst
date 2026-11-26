@@ -9,6 +9,7 @@ from backend.app.config import settings
 from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 from backend.app.limiter import limiter
 from backend.app.routers import health, kpis, analytics, data_quality, ai, anomalies, voice, datasets
+from backend.app.routers import forecast, report
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,21 @@ app = FastAPI(
 
 # Register slowapi rate limiter state and exception handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """slowapi's default 429 body plus a `detail` key (the shape the frontend reads for every error)."""
+    response = _rate_limit_exceeded_handler(request, exc)
+    body = {"error": f"Rate limit exceeded: {exc.detail}",
+            "detail": f"Too many requests (limit: {exc.detail}). Please wait a moment and try again."}
+    out = JSONResponse(body, status_code=429)
+    for k, v in response.headers.items():
+        if k.lower().startswith("x-ratelimit") or k.lower() == "retry-after":
+            out.headers[k] = v
+    return out
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
 # Register QueryTimeoutError exception handler (504 Gateway Timeout)
 @app.exception_handler(QueryTimeoutError)
@@ -69,6 +84,28 @@ app.include_router(ai.router, prefix=settings.API_PREFIX)
 app.include_router(anomalies.router, prefix=settings.API_PREFIX)
 app.include_router(voice.router, prefix=settings.API_PREFIX)
 app.include_router(datasets.router, prefix=settings.API_PREFIX)
+app.include_router(forecast.router, prefix=settings.API_PREFIX)
+app.include_router(report.router, prefix=settings.API_PREFIX)
+
+@app.on_event("startup")
+def _warm_data_quality_cache():
+    """Pre-compute the (slow on remote DBs) data-quality audit so the first page load is instant."""
+    import threading
+    from backend.app.fixture_guard import is_fixture_mode_allowed
+    from backend.app.services.data_quality_service import DataQualityService
+
+    if is_fixture_mode_allowed():
+        return
+
+    def _run():
+        try:
+            DataQualityService.fetch_audit_summary()
+            logger.info("Data-quality audit cache warmed.")
+        except Exception as e:  # DB down at boot: requests will retry and surface 503s normally
+            logger.warning(f"Data-quality cache warm-up skipped: {e}")
+
+    threading.Thread(target=_run, name="dq-cache-warmup", daemon=True).start()
+
 
 @app.get("/")
 def root():

@@ -20,6 +20,8 @@ frontend/dist/
 data/raw/*.csv
 data/processed/*.csv
 data/samples/*.xlsx
+# Small (deterministic) fixture required by backend/tests_integration
+!data/samples/student_marks.xlsx
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 

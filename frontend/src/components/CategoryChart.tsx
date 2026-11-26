@@ -6,8 +6,11 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid
+  CartesianGrid,
+  LabelList
 } from 'recharts';
+import { formatCompact, formatMoney } from '../lib/format';
+import { TruncatedTick } from './ui';
 import { CategoryItem } from '../types/api';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorBanner } from './ErrorBanner';
@@ -34,7 +37,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
   }));
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-xl p-6 shadow-xs">
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs min-w-0 card-lift animate-fade-in-up">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-bold text-slate-900 tracking-tight">Top Product Categories</h2>
@@ -42,12 +45,12 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
         </div>
       </div>
 
-      <div className="h-[280px] w-full">
+      <div className="w-full" style={{ height: Math.max(280, formattedData.length * 30) }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={formattedData} layout="vertical" margin={{ top: 5, right: 20, left: 40, bottom: 5 }}>
+          <BarChart data={formattedData} layout="vertical" margin={{ top: 5, right: 56, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-            <XAxis type="number" stroke="#64748B" fontSize={11} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-            <YAxis dataKey="formattedCategory" type="category" stroke="#475569" fontSize={11} width={110} tickLine={false} />
+            <XAxis type="number" stroke="#64748B" fontSize={10} tickLine={false} tickFormatter={(v) => formatCompact(Number(v), 'R$')} />
+            <YAxis dataKey="formattedCategory" type="category" stroke="#475569" width={112} tickLine={false} interval={0} tick={<TruncatedTick max={17} />} />
             <Tooltip
               contentStyle={{
                 backgroundColor: '#FFFFFF',
@@ -57,10 +60,13 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
                 boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)',
                 fontSize: '12px'
               }}
-              formatter={(val: any) => [`R$ ${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Revenue']}
+              formatter={(val: any) => [formatMoney(Number(val), 'R$'), 'Revenue']}
+              cursor={{ fill: 'rgba(99,102,241,0.06)' }}
             />
 
-            <Bar dataKey="total_revenue" fill="#4F46E5" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="total_revenue" fill="#4F46E5" radius={[0, 6, 6, 0]} animationDuration={800}>
+              <LabelList dataKey="total_revenue" position="right" fontSize={10} fill="#475569" formatter={(v: any) => formatCompact(Number(v), 'R$')} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

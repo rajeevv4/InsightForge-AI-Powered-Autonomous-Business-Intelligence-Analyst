@@ -45,9 +45,12 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h localhost -U postgres -d insightforge -f database/schema.sql
-          psql -h localhost -U postgres -d insightforge -f database/views.sql
-          psql -h localhost -U postgres -d insightforge -f database/roles.sql
+          for f in database/schema.sql database/views.sql \
+                   database/migrations/001_create_datasets_metadata.sql \
+                   database/migrations/002_create_dataset_semantic.sql \
+                   database/roles.sql; do
+            psql -h localhost -U postgres -d insightforge -v ON_ERROR_STOP=1 -f "$f"
+          done
 
       - name: Seed Database Sample / Canonical Data
         env:

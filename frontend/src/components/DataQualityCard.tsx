@@ -142,9 +142,9 @@ export const DataQualityCard: React.FC<DataQualityCardProps> = ({
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             {Object.entries(data.missing_value_summary).map(([field, count]) => (
-              <div key={field} className="p-3 bg-white border border-slate-200/80 rounded-lg flex items-center justify-between">
-                <span className="text-slate-600 font-medium">{field}</span>
-                <span className={`font-bold ${count > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{count.toLocaleString()}</span>
+              <div key={field} className="p-3 bg-white border border-slate-200/80 rounded-lg flex items-center justify-between gap-3 min-w-0">
+                <span className="text-slate-600 font-medium font-mono text-[11px] break-all min-w-0" title={field}>{field}</span>
+                <span className={`shrink-0 font-bold ${count > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{count.toLocaleString()}</span>
               </div>
             ))}
           </div>

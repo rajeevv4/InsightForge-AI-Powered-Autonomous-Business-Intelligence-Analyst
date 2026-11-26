@@ -35,17 +35,22 @@ class TestDatasetIsolationAndSecurityLive(unittest.TestCase):
     def tearDownClass(cls):
         """Ensure all created test datasets are purged and no ds_* schemas remain."""
         for ds_id in cls.created_dataset_ids:
+            # psycopg2 sql.Composed objects need a raw DBAPI cursor (SQLAlchemy cannot execute them).
+            raw_conn = engine.raw_connection()
             try:
-                with engine.begin() as conn:
-                    row = conn.execute(
-                        text("SELECT schema_name FROM insightforge.datasets WHERE id = :id"),
-                        {"id": ds_id}
-                    ).fetchone()
+                with raw_conn.cursor() as cur:
+                    cur.execute("SELECT schema_name FROM insightforge.datasets WHERE id = %s", (ds_id,))
+                    row = cur.fetchone()
                     if row:
-                        conn.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE;").format(sql.Identifier(row[0])))
-                    conn.execute(text("DELETE FROM insightforge.datasets WHERE id = :id"), {"id": ds_id})
+                        cur.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE;").format(sql.Identifier(row[0])))
+                        if row[0].startswith("ds_"):
+                            cur.execute(sql.SQL("DROP ROLE IF EXISTS {};").format(sql.Identifier("dsr_" + row[0][3:])))
+                    cur.execute("DELETE FROM insightforge.datasets WHERE id = %s", (ds_id,))
+                raw_conn.commit()
             except Exception:
-                pass
+                raw_conn.rollback()
+            finally:
+                raw_conn.close()
 
         cleanup_expired_datasets(dry_run=False)
 
