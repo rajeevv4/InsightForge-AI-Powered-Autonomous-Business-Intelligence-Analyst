@@ -74,7 +74,7 @@ def ask_ai_question(request: Request, payload: AskAIRequest) -> AskAIResponse:
 @limiter.limit(settings.RATE_LIMIT_AI_ASK)
 def ask_sql_question(request: Request, payload: AskAIRequest) -> SQLAskResponse:
     try:
-        response = TextToSQLService.ask_sql(payload.question)
+        response = TextToSQLService.ask_sql(payload.question, history=payload.history)
         return response
     except QueryTimeoutError as e:
         logger.error(f"Query timed out in SQL Ask: {e}", exc_info=True)

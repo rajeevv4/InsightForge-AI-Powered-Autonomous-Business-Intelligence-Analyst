@@ -201,11 +201,46 @@ class TextToSQLService:
         return "\n".join(rules_text)
 
     @classmethod
-    def build_generation_prompt(cls, question: str, previous_error: Optional[str] = None, previous_sql: Optional[str] = None) -> str:
+    def _format_history_context(
+        cls,
+        history: Optional[List[Any]],
+        redact_literals: bool = False,
+    ) -> str:
+        """
+        Formats prior conversation turns (question + SQL/intent only, NEVER result rows)
+        for multi-turn follow-up SQL generation.
+        """
+        if not history:
+            return ""
+        lines = [
+            "CONVERSATION HISTORY (most recent turns; use this to resolve follow-up references like 'that', 'filter for X', 'only top 5', etc.):"
+        ]
+        for idx, turn in enumerate(history[-5:], start=1):
+            q = (turn.get("question") if isinstance(turn, dict) else getattr(turn, "question", "")) or ""
+            sql = (turn.get("sql") if isinstance(turn, dict) else getattr(turn, "sql", None))
+            intent = (turn.get("intent") if isinstance(turn, dict) else getattr(turn, "intent", None))
+            if sql:
+                safe_sql = re.sub(r"'[^']*'", "'<literal>'", sql) if redact_literals else sql
+                lines.append(f"- Turn {idx} Question: \"{q}\" | Prior SQL: {safe_sql}")
+            elif intent:
+                lines.append(f"- Turn {idx} Question: \"{q}\" | Prior Intent: {intent}")
+            else:
+                lines.append(f"- Turn {idx} Question: \"{q}\"")
+        return "\n".join(lines)
+
+    @classmethod
+    def build_generation_prompt(
+        cls,
+        question: str,
+        previous_error: Optional[str] = None,
+        previous_sql: Optional[str] = None,
+        history: Optional[List[Any]] = None,
+    ) -> str:
         """
         Builds system prompt for Gemini structured JSON output.
         """
         semantic_context = cls.load_semantic_rules()
+        history_section = cls._format_history_context(history, redact_literals=False)
 
         correction_section = ""
         if previous_error and previous_sql:
@@ -242,6 +277,8 @@ Your task is to convert the natural language business question into a single, hi
 {semantic_context}
 
 {correction_section}
+
+{history_section}
 
 USER QUESTION: "{question}"
 
@@ -288,7 +325,8 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         cls,
         client: Any,
         question: str,
-        max_retries: int = 2
+        max_retries: int = 2,
+        history: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generates SQL via Gemini with self-correction retry loop on validation/execution error.
@@ -298,7 +336,12 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         last_sql = None
 
         while attempt <= max_retries:
-            prompt = cls.build_generation_prompt(question, previous_error=last_error, previous_sql=last_sql)
+            prompt = cls.build_generation_prompt(
+                question,
+                previous_error=last_error,
+                previous_sql=last_sql,
+                history=history,
+            )
             try:
                 gen_config = types.GenerateContentConfig(temperature=0.0) if types else None
                 response = client.models.generate_content(
@@ -376,25 +419,32 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         return f"Query returned **{len(rows)}** records across columns `{', '.join(columns)}`."
 
     @classmethod
-    def ask_sql(cls, question: str) -> SQLAskResponse:
+    def ask_sql(cls, question: str, history: Optional[List[Any]] = None) -> SQLAskResponse:
         """
         Unified routing entrypoint for natural language questions.
         Routing Policy:
-        - Intent confidence >= 0.80 -> Intent router (deterministic validated views).
+        - Intent confidence >= 0.80 (and no multi-turn follow-up history) -> Intent router.
         - Otherwise -> Guarded Text-to-SQL (dynamic queries).
         """
         start_time = time.time()
         client = AIService._get_genai_client()
         language = detect_language(question)
 
+        # If multi-turn history is provided and Gemini is available, route to Text-to-SQL
+        # so follow-up filters/refinements can build on prior SQL.
+        has_history = bool(history and len(history) > 0)
+
         # Step 1: Fast Heuristic Intent Check (sub-millisecond deterministic lookup)
-        fast_classification = AIService.classify_intent_heuristic(question)
-        if fast_classification.get("confidence", 0.0) >= 0.85:
-            classification = fast_classification
-        elif client:
-            classification = AIService.classify_intent_gemini(client, question)
+        if has_history and client:
+            classification = {"intent": "unknown", "confidence": 0.0, "canned_answerable": False}
         else:
-            classification = fast_classification
+            fast_classification = AIService.classify_intent_heuristic(question)
+            if fast_classification.get("confidence", 0.0) >= 0.85:
+                classification = fast_classification
+            elif client:
+                classification = AIService.classify_intent_gemini(client, question)
+            else:
+                classification = fast_classification
 
         intent = classification.get("intent", "unknown")
         confidence = float(classification.get("confidence", 0.0))
@@ -471,7 +521,7 @@ Do NOT include any markdown code blocks or text outside the JSON object.
                 error=err_msg
             )
 
-        gen_result = cls.generate_and_validate_sql(client, question)
+        gen_result = cls.generate_and_validate_sql(client, question, history=history)
         latency_ms = (time.time() - start_time) * 1000.0
 
         if not gen_result["success"]:
@@ -538,7 +588,8 @@ Do NOT include any markdown code blocks or text outside the JSON object.
         profile: Any,
         semantic_model: SemanticModel,
         previous_error: Optional[str] = None,
-        previous_sql: Optional[str] = None
+        previous_sql: Optional[str] = None,
+        history: Optional[List[Any]] = None,
     ) -> str:
         """Builds Gemini prompt for dataset workspace Q&A."""
         schema_name = profile.schema_name
@@ -586,6 +637,8 @@ Validation/Database Error:
 Please fix this error immediately in your new query. Ensure all referenced tables belong to this dataset and are properly qualified, do not cause fan-out duplication, and output a valid PostgreSQL SELECT statement.
 """
 
+        history_section = cls._format_history_context(history, redact_literals=not profile.share_samples)
+
         prompt = f"""
 You are InsightForge's Expert PostgreSQL Data Analyst.
 Your task is to convert the natural language business question into a single, highly performant, guarded PostgreSQL SELECT query for the '{profile.name}' dataset.
@@ -610,6 +663,8 @@ RELATIONSHIPS:
 
 {correction_section}
 
+{history_section}
+
 USER QUESTION: "{question}"
 
 You must respond ONLY with a valid JSON object matching the following schema:
@@ -628,15 +683,21 @@ You must respond ONLY with a valid JSON object matching the following schema:
         dataset_id: str,
         question: str,
         owner_token: Optional[str] = None,
-        language: str = "auto"
+        language: str = "auto",
+        history: Optional[List[Any]] = None,
     ) -> DatasetAskResponse:
         """
         Executes guarded dataset-aware Text-to-SQL for dataset workspace.
         Enforces tenant isolation, schema qualification, privacy model, and audit logging.
         """
         start_time = time.time()
-        cache_key = (str(dataset_id), question.strip().lower())
-        if cache_key in cls._dataset_ask_cache:
+        history_sig = tuple(
+            ((t.get("question") if isinstance(t, dict) else getattr(t, "question", "")),
+             (t.get("sql") if isinstance(t, dict) else getattr(t, "sql", None)))
+            for t in (history or [])[-5:]
+        )
+        cache_key = (str(dataset_id), question.strip().lower(), history_sig)
+        if not history and cache_key in cls._dataset_ask_cache:
             return cls._dataset_ask_cache[cache_key]
 
         # Verify access & retrieve profile
@@ -683,7 +744,8 @@ You must respond ONLY with a valid JSON object matching the following schema:
                 profile=profile,
                 semantic_model=semantic_model,
                 previous_error=last_error,
-                previous_sql=last_sql
+                previous_sql=last_sql,
+                history=history,
             )
             try:
                 gen_config = types.GenerateContentConfig(temperature=0.0) if types else None

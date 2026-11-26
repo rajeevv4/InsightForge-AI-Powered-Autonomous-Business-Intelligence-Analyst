@@ -372,7 +372,8 @@ def ask_dataset(
             dataset_id=dataset_id,
             question=req.question,
             owner_token=x_owner_token,
-            language=req.language or "auto"
+            language=req.language or "auto",
+            history=req.history,
         )
     except FileValidationError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)

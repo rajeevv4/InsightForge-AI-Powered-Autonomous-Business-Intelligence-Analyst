@@ -26,7 +26,9 @@ import {
   Layers,
   Check,
   Edit3,
-  LayoutDashboard
+  LayoutDashboard,
+  MessageSquare,
+  X
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -34,6 +36,10 @@ import {
   Bar,
   LineChart,
   Line,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
   XAxis,
   YAxis,
   Tooltip,
@@ -42,6 +48,7 @@ import {
 import { AnomalyExplainDrawer, ExplainButton, ExplainTarget } from './AnomalyExplainDrawer';
 import { api } from '../services/api';
 import {
+  ConversationTurn,
   DatasetAskResponse,
   DatasetInsightsResponse,
   DatasetSemanticResponse,
@@ -121,6 +128,8 @@ export const AskInsightForge: React.FC = () => {
   // Display toggles
   const [showSql, setShowSql] = useState<boolean>(false);
   const [showTable, setShowTable] = useState<boolean>(true);
+  const [chartOverride, setChartOverride] = useState<'bar' | 'line' | 'pie' | 'table' | null>(null);
+  const [conversationHistory, setConversationHistory] = useState<ConversationTurn[]>([]);
 
   // Voice & Multilingual State
   const [selectedLanguage, setSelectedLanguage] = useState<'auto' | 'hi' | 'en'>('auto');
@@ -160,6 +169,8 @@ export const AskInsightForge: React.FC = () => {
     setOlistResponse(null);
     setDatasetResponse(null);
     setVoiceNotice(null);
+    setChartOverride(null);
+    setConversationHistory([]);
     // Drop the previous dataset's semantic model so its starter questions never show for this one.
     setSemantic(null);
     selectedDatasetIdRef.current = selectedDatasetId;
@@ -211,15 +222,41 @@ export const AskInsightForge: React.FC = () => {
     }
   };
 
+  const detectClientChartSwitch = (q: string): 'bar' | 'line' | 'pie' | 'table' | null => {
+    const clean = q.trim().toLowerCase();
+    const match = clean.match(
+      /^(?:please\s+)?(?:plot|show|draw|switch|convert|make|view|display|turn)?\s*(?:it|this|that|these|results|data)?\s*(?:as|to|into|in)?\s*(?:a\s*)?(pie|bar|line|table)\s*(?:chart|graph|plot|view)?(?:\s+(?:of|for)\s+(?:this|it|that|the\s+results))?[.!?]*$/i
+    );
+    if (!match) return null;
+    const kind = match[1].toLowerCase();
+    if (kind === 'pie' || kind === 'bar' || kind === 'line' || kind === 'table') {
+      return kind;
+    }
+    return null;
+  };
+
   const handleAsk = async (queryToAsk?: string) => {
     const targetQuestion = (queryToAsk !== undefined ? queryToAsk : question).trim();
     if (!targetQuestion) return;
+
+    // Client-side chart switch on existing rows (zero LLM quota, instant)
+    const currentRows = isCustomDataset ? (datasetResponse?.data_rows || []) : (olistResponse?.rows || []);
+    const clientChart = detectClientChartSwitch(targetQuestion);
+    if (clientChart && currentRows.length > 0) {
+      setChartOverride(clientChart);
+      if (clientChart === 'table') {
+        setShowTable(true);
+      }
+      setVoiceNotice(`Switched visualization to ${clientChart.toUpperCase()} using current results (no extra AI call).`);
+      return;
+    }
 
     setQuestion(targetQuestion);
     setLoading(true);
     setError(null);
     setIsDbUnavailable(false);
     setShowSql(false);
+    setChartOverride(null);
     setVoiceNotice(null);
 
     if (window.speechSynthesis) {
@@ -229,11 +266,19 @@ export const AskInsightForge: React.FC = () => {
 
     try {
       if (isCustomDataset) {
-        const result = await api.askDataset(selectedDatasetId, targetQuestion, selectedLanguage);
+        const result = await api.askDataset(selectedDatasetId, targetQuestion, selectedLanguage, conversationHistory);
         setDatasetResponse(result);
+        setConversationHistory((prev) => [
+          ...prev.slice(-4),
+          { question: targetQuestion, sql: result.sql || null, intent: null }
+        ]);
       } else {
-        const result = await api.sqlAskAI(targetQuestion);
+        const result = await api.sqlAskAI(targetQuestion, conversationHistory);
         setOlistResponse(result);
+        setConversationHistory((prev) => [
+          ...prev.slice(-4),
+          { question: targetQuestion, sql: result.sql || null, intent: result.route === 'intent' ? 'intent' : null }
+        ]);
       }
     } catch (err: any) {
       console.error('Failed to query AI:', err);
@@ -459,6 +504,13 @@ export const AskInsightForge: React.FC = () => {
     return typeof val === 'number';
   });
   const hasChartData = Boolean(rows.length > 0 && stringCol && numericCol && rows.length <= 50);
+  const rawSuggestedChart = (activeResponse?.suggested_chart || 'bar').toLowerCase();
+  const activeChartType: 'bar' | 'line' | 'pie' | 'table' =
+    chartOverride ||
+    (rawSuggestedChart === 'line' || rawSuggestedChart === 'pie' || rawSuggestedChart === 'table'
+      ? rawSuggestedChart
+      : 'bar');
+  const PIE_COLORS = ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316'];
 
   return (
     <div className="space-y-6">
@@ -671,6 +723,23 @@ export const AskInsightForge: React.FC = () => {
                 <span>Transcribing speech...</span>
               </div>
             )}
+            {conversationHistory.length > 0 && (
+              <div className="flex items-center space-x-1.5 text-indigo-700 font-medium bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-md">
+                <MessageSquare className="w-3 h-3 text-indigo-600" />
+                <span>Follow-up memory ({conversationHistory.length} {conversationHistory.length === 1 ? 'turn' : 'turns'})</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConversationHistory([]);
+                    setVoiceNotice('Conversation context cleared. Next question starts fresh.');
+                  }}
+                  title="Clear follow-up conversation memory"
+                  className="ml-1 text-indigo-500 hover:text-indigo-800 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Question Input Box + Voice Recording */}
@@ -818,26 +887,75 @@ export const AskInsightForge: React.FC = () => {
                 </div>
               )}
 
-              {/* Suggested Chart */}
+              {/* Suggested / Interactive Chart Switcher */}
               {hasChartData && (
                 <div className="p-5 bg-white">
-                  <div className="flex items-center justify-between mb-3 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
                     <span className="font-bold text-slate-800 flex items-center space-x-1.5">
                       <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
                       <span>Data Visualization: {stringCol} vs {numericCol}</span>
                     </span>
+                    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[11px] font-semibold">
+                      {(['bar', 'line', 'pie', 'table'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => {
+                            setChartOverride(mode);
+                            if (mode === 'table') setShowTable(true);
+                          }}
+                          className={`px-2 py-1 rounded-md capitalize transition cursor-pointer ${
+                            activeChartType === mode
+                              ? 'bg-white text-indigo-600 shadow-xs'
+                              : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="h-56 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                        <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey={numericCol || 'value'} fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {activeChartType !== 'table' && (
+                    <div className="h-60 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        {activeChartType === 'line' ? (
+                          <LineChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
+                            <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                            <Tooltip />
+                            <Line type="monotone" dataKey={numericCol || 'value'} stroke="#4f46e5" strokeWidth={2.5} dot={{ r: 3 }} />
+                          </LineChart>
+                        ) : activeChartType === 'pie' ? (
+                          <PieChart>
+                            <Pie
+                              data={rows.slice(0, 8)}
+                              dataKey={numericCol || 'value'}
+                              nameKey={stringCol || 'label'}
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={80}
+                              label
+                            >
+                              {rows.slice(0, 8).map((_, index) => (
+                                <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                            <Legend wrapperStyle={{ fontSize: '11px' }} />
+                          </PieChart>
+                        ) : (
+                          <BarChart data={rows} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey={stringCol || 'label'} stroke="#94a3b8" fontSize={10} tickLine={false} />
+                            <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                            <Tooltip />
+                            <Bar dataKey={numericCol || 'value'} fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        )}
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
               )}
 

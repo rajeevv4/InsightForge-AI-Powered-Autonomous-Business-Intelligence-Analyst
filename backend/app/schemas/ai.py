@@ -2,11 +2,22 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class ConversationTurn(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500, description="Previous user question in the conversation")
+    sql: Optional[str] = Field(default=None, max_length=4000, description="Validated SQL generated for that turn (never result rows)")
+    intent: Optional[str] = Field(default=None, max_length=100, description="Resolved intent if handled by intent router")
+
+
 class AskAIRequest(BaseModel):
     question: str = Field(
         ...,
         description="The natural language business question to ask InsightForge",
         examples=["Which category generated the highest revenue?"]
+    )
+    history: Optional[List[ConversationTurn]] = Field(
+        default=None,
+        max_length=10,
+        description="Optional prior conversation turns (question + SQL only, no result rows)"
     )
 
     @field_validator("question")

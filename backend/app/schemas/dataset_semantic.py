@@ -75,9 +75,17 @@ class UpdateDatasetSemanticRequest(BaseModel):
     user_notes: Optional[str] = None
 
 
+from backend.app.schemas.ai import ConversationTurn
+
+
 class DatasetAskRequest(BaseModel):
     question: str
     language: Optional[str] = Field(default="auto", description="'auto', 'en', 'hi', or 'hinglish'")
+    history: Optional[List[ConversationTurn]] = Field(
+        default=None,
+        max_length=10,
+        description="Optional prior conversation turns (question + SQL only, no result rows)"
+    )
 
 
 class DatasetAskResponse(BaseModel):

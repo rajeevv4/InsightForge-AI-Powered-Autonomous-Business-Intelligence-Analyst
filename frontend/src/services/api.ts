@@ -9,6 +9,7 @@ import {
   DeliverySLAItem,
   PaymentItem,
   DataQualityResponse,
+  ConversationTurn,
   AskAIResponse,
   AnomalyListResponse,
   AnomalyScanRequest,
@@ -107,8 +108,12 @@ export const api = {
     return res.data;
   },
 
-  sqlAskAI: async (question: string): Promise<SQLAskResponse> => {
-    const res = await client.post<SQLAskResponse>('/ai/sql-ask', { question }, { timeout: 60000 });
+  sqlAskAI: async (question: string, history?: ConversationTurn[]): Promise<SQLAskResponse> => {
+    const payload: { question: string; history?: ConversationTurn[] } = { question };
+    if (history && history.length > 0) {
+      payload.history = history;
+    }
+    const res = await client.post<SQLAskResponse>('/ai/sql-ask', payload, { timeout: 60000 });
     return res.data;
   },
 
@@ -223,8 +228,12 @@ export const api = {
     return res.data;
   },
 
-  askDataset: async (id: string, question: string, language: string = 'auto'): Promise<DatasetAskResponse> => {
-    const res = await client.post<DatasetAskResponse>(`/datasets/${id}/ask`, { question, language }, {
+  askDataset: async (id: string, question: string, language: string = 'auto', history?: ConversationTurn[]): Promise<DatasetAskResponse> => {
+    const payload: { question: string; language: string; history?: ConversationTurn[] } = { question, language };
+    if (history && history.length > 0) {
+      payload.history = history;
+    }
+    const res = await client.post<DatasetAskResponse>(`/datasets/${id}/ask`, payload, {
       headers: { 'X-Owner-Token': getOwnerToken() },
       timeout: 45000,
     });

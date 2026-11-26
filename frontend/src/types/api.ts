@@ -92,8 +92,15 @@ export interface DataQualityResponse {
   anomalies_flagged: string[];
 }
 
+export interface ConversationTurn {
+  question: string;
+  sql?: string | null;
+  intent?: string | null;
+}
+
 export interface AskAIRequest {
   question: string;
+  history?: ConversationTurn[];
 }
 
 export interface AIEvidence {
