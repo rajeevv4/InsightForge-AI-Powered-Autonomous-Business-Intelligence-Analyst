@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Info, LineChart as LineChartIcon } from 'lucide-react';
+import { AlertTriangle, Info, LineChart as LineChartIcon, Sliders, RotateCcw } from 'lucide-react';
 import { Area, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '../services/api';
 import { useActiveDataset } from '../contexts/ActiveDatasetContext';
-import { ForecastResponse } from '../types/api';
+import { ForecastResponse, ScenarioBaselineResponse } from '../types/api';
 import { useUi } from '../contexts/UiContext';
 import { CurrencyCode, formatCompact, formatMoney, formatNumber } from '../lib/format';
 import { EmptyState, InfoTip } from '../components/ui';
@@ -26,10 +26,27 @@ export const ForecastPage: React.FC = () => {
   const [horizon, setHorizon] = useState<number>(3);
   const [exclude, setExclude] = useState<boolean>(false);
 
+  // Assumption-based Scenario Calculator state (0 = baseline)
+  const [ordersDeltaPct, setOrdersDeltaPct] = useState<number>(0);
+  const [aovDeltaPct, setAovDeltaPct] = useState<number>(0);
+  const [lateReductionPct, setLateReductionPct] = useState<number>(0);
+  const [scenarioBaseline, setScenarioBaseline] = useState<ScenarioBaselineResponse | null>(null);
+
   useEffect(() => {
     setMetric(null);
     setExclude(false);
+    setOrdersDeltaPct(0);
+    setAovDeltaPct(0);
+    setLateReductionPct(0);
   }, [activeDatasetId]);
+
+  useEffect(() => {
+    if (!isOlist) {
+      setScenarioBaseline(null);
+      return;
+    }
+    api.getScenarioBaseline().then(setScenarioBaseline).catch(() => setScenarioBaseline(null));
+  }, [isOlist]);
 
   const { data, loading, error, reload } = useWorkspaceData<ForecastResponse>(
     `forecast:${activeDatasetId}:${metric ?? ''}:${horizon}:${exclude}`,
@@ -51,20 +68,65 @@ export const ForecastPage: React.FC = () => {
   };
   const compact = (v: number) => formatCompact(v, currency);
 
+  const isCountMetric = data?.metric === 'order_count' || opt?.aggregation === 'count';
+  const scenarioMultiplier = isCountMetric
+    ? 1 + ordersDeltaPct / 100
+    : (1 + ordersDeltaPct / 100) * (1 + aovDeltaPct / 100);
+  const hasScenarioActive = Math.abs(scenarioMultiplier - 1) > 1e-6 || lateReductionPct > 0;
+
   const rows = useMemo(() => {
     if (!data) return [];
     const hist = data.history.map((h) => ({ period: h.period, actual: h.value } as Record<string, any>));
     if (data.status === 'ok' && hist.length && data.forecast.length) {
       const last = hist[hist.length - 1];
       last.expected = last.actual; // connect the dashed forecast line to the last actual month
+      if (Math.abs(scenarioMultiplier - 1) > 1e-6) {
+        last.simulated = last.actual;
+      }
       last.band80 = [last.actual, last.actual];
       last.band95 = [last.actual, last.actual];
     }
     const fc = data.status === 'ok'
-      ? data.forecast.map((p) => ({ period: p.period, expected: p.expected, band80: [p.lower_80, p.upper_80], band95: [p.lower_95, p.upper_95] }))
+      ? data.forecast.map((p) => {
+          const item: Record<string, any> = {
+            period: p.period,
+            expected: p.expected,
+            band80: [p.lower_80, p.upper_80],
+            band95: [p.lower_95, p.upper_95],
+          };
+          if (Math.abs(scenarioMultiplier - 1) > 1e-6) {
+            item.simulated = Number((p.expected * scenarioMultiplier).toFixed(2));
+          }
+          return item;
+        })
       : [];
     return [...hist, ...fc];
-  }, [data]);
+  }, [data, scenarioMultiplier]);
+
+  const scenarioTotals = useMemo(() => {
+    if (!data || data.status !== 'ok') return null;
+    const baseTotal = data.forecast.reduce((acc, p) => acc + p.expected, 0);
+    const simTotal = baseTotal * scenarioMultiplier;
+    const simLow80 = data.forecast.reduce((acc, p) => acc + p.lower_80, 0) * scenarioMultiplier;
+    const simHigh80 = data.forecast.reduce((acc, p) => acc + p.upper_80, 0) * scenarioMultiplier;
+    return {
+      baseTotal,
+      simTotal,
+      delta: simTotal - baseTotal,
+      simLow80,
+      simHigh80,
+    };
+  }, [data, scenarioMultiplier]);
+
+  const projectedCsat = useMemo(() => {
+    if (!scenarioBaseline) return null;
+    const shiftedShare = (scenarioBaseline.late_share_pct / 100) * (lateReductionPct / 100);
+    const deltaCsat = shiftedShare * scenarioBaseline.observed_review_gap;
+    return {
+      projected: Math.min(5, scenarioBaseline.baseline_csat + deltaCsat),
+      delta: deltaCsat,
+    };
+  }, [scenarioBaseline, lateReductionPct]);
 
   const datasetName = isOlist ? 'Olist demo' : activeDataset?.name || 'dataset';
 
@@ -157,7 +219,10 @@ export const ForecastPage: React.FC = () => {
                     <Area dataKey="band95" name="95% band" stroke="none" fill="#6366f1" fillOpacity={0.12} isAnimationActive={false} />
                     <Area dataKey="band80" name="80% band" stroke="none" fill="#6366f1" fillOpacity={0.28} isAnimationActive={false} />
                     <Line className="if-ink-line" dataKey="actual" name="Actual" stroke="#0f172a" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
-                    <Line dataKey="expected" name="Forecast" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} isAnimationActive={false} />
+                    <Line dataKey="expected" name="Baseline Forecast" stroke="#6366f1" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} isAnimationActive={false} />
+                    {Math.abs(scenarioMultiplier - 1) > 1e-6 && (
+                      <Line dataKey="simulated" name="Scenario Projection" stroke="#10b981" strokeWidth={2.5} strokeDasharray="4 3" dot={{ r: 3 }} isAnimationActive={false} />
+                    )}
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -166,6 +231,144 @@ export const ForecastPage: React.FC = () => {
               <Info className="w-3.5 h-3.5 shrink-0" />{data.disclaimer}
             </p>
           </div>
+
+          {data.status === 'ok' && (
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 space-y-4 animate-fade-in-up">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl">
+                    <Sliders className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                      Assumption-Based Scenario Calculator
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      Direct arithmetic on the {data.horizon}-month ETS baseline (all assumptions explicit; not causal AI prediction).
+                    </p>
+                  </div>
+                </div>
+                {hasScenarioActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOrdersDeltaPct(0);
+                      setAovDeltaPct(0);
+                      setLateReductionPct(0);
+                    }}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset to Baseline</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/60 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-700">Order Volume Change</span>
+                    <span className="font-mono font-bold text-indigo-700">
+                      {ordersDeltaPct > 0 ? `+${ordersDeltaPct}%` : `${ordersDeltaPct}%`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-30}
+                    max={30}
+                    step={1}
+                    value={ordersDeltaPct}
+                    onChange={(e) => setOrdersDeltaPct(Number(e.target.value))}
+                    className="w-full accent-indigo-600 cursor-pointer"
+                  />
+                  <div className="text-[10px] text-slate-500">Range: -30% to +30% vs baseline</div>
+                </div>
+
+                {!isCountMetric && (
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">AOV Change</span>
+                      <span className="font-mono font-bold text-indigo-700">
+                        {aovDeltaPct > 0 ? `+${aovDeltaPct}%` : `${aovDeltaPct}%`}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-30}
+                      max={30}
+                      step={1}
+                      value={aovDeltaPct}
+                      onChange={(e) => setAovDeltaPct(Number(e.target.value))}
+                      className="w-full accent-indigo-600 cursor-pointer"
+                    />
+                    <div className="text-[10px] text-slate-500">Formula: Revenue = Orders × AOV</div>
+                  </div>
+                )}
+
+                {isOlist && scenarioBaseline && (
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-700">Late Delivery Reduction</span>
+                      <span className="font-mono font-bold text-emerald-700">-{lateReductionPct}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={lateReductionPct}
+                      onChange={(e) => setLateReductionPct(Number(e.target.value))}
+                      className="w-full accent-emerald-600 cursor-pointer"
+                    />
+                    <div className="text-[10px] text-slate-500">
+                      Observed late share: {scenarioBaseline.late_share_pct}% (gap: {scenarioBaseline.observed_review_gap}★)
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {scenarioTotals && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                      Baseline {data.horizon}-Mo Total
+                    </div>
+                    <div className="text-base font-bold text-slate-900 mt-0.5">{fmt(scenarioTotals.baseTotal)}</div>
+                  </div>
+                  <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40">
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold">
+                      Scenario {data.horizon}-Mo Total
+                    </div>
+                    <div className="text-base font-bold text-emerald-900 mt-0.5">
+                      {fmt(scenarioTotals.simTotal)}{' '}
+                      <span className={`text-xs font-mono ${scenarioTotals.delta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        ({scenarioTotals.delta >= 0 ? '+' : ''}{fmt(scenarioTotals.delta)})
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      Scaled 80% band: {fmt(scenarioTotals.simLow80)} – {fmt(scenarioTotals.simHigh80)}
+                    </div>
+                  </div>
+                  {isOlist && scenarioBaseline && projectedCsat && (
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-white">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                        Projected CSAT (Association)
+                      </div>
+                      <div className="text-base font-bold text-slate-900 mt-0.5">
+                        {projectedCsat.projected.toFixed(2)}★{' '}
+                        <span className="text-xs font-mono text-emerald-700">
+                          (+{projectedCsat.delta.toFixed(2)}★)
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-amber-700 mt-0.5">
+                        Based on observed association (On-Time {scenarioBaseline.on_time_avg_review}★ vs Late {scenarioBaseline.late_avg_review}★), not proven causation.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {data.status === 'ok' && (
             <div className="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 overflow-x-auto animate-fade-in-up">

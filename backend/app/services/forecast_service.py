@@ -55,6 +55,7 @@ from backend.app.schemas.forecast import (
     ForecastMetricOption,
     ForecastPoint,
     ForecastResponse,
+    ScenarioBaselineResponse,
 )
 
 try:
@@ -205,8 +206,26 @@ def daily_model(y: pd.Series, horizon: int) -> Tuple[List[ForecastPoint], str]:
     end = pd.Timestamp(month_end(start + pd.DateOffset(months=horizon - 1)))
     days = pd.date_range(start, end, freq="D")
     point = np.asarray(res.forecast(len(days)), dtype=float)
-    sims = np.asarray(res.simulate(nsimulations=len(days), repetitions=FORECAST_RULES["simulations"], anchor="end",
-                                   random_state=FORECAST_RULES["seed"]), dtype=float).reshape(len(days), -1)
+    try:
+        sims = np.asarray(
+            res.simulate(
+                nsimulations=len(days),
+                repetitions=FORECAST_RULES["simulations"],
+                anchor="end",
+                rng=np.random.default_rng(FORECAST_RULES["seed"]),
+            ),
+            dtype=float,
+        ).reshape(len(days), -1)
+    except TypeError:
+        sims = np.asarray(
+            res.simulate(
+                nsimulations=len(days),
+                repetitions=FORECAST_RULES["simulations"],
+                anchor="end",
+                random_state=FORECAST_RULES["seed"],
+            ),
+            dtype=float,
+        ).reshape(len(days), -1)
     sims = np.clip(sims, 0.0, None)
     months = days.to_period("M")
     points = []
@@ -426,6 +445,66 @@ class OlistForecastService:
     def clear_cache(cls) -> None:
         with _OLIST_LOCK:
             _OLIST_CACHE.clear()
+
+    @classmethod
+    def scenario_baseline(cls) -> ScenarioBaselineResponse:
+        """Observed Olist delivery SLA vs review score gap for the assumption-based scenario calculator."""
+        if is_fixture_mode_allowed():
+            return ScenarioBaselineResponse(
+                on_time_orders=88644,
+                late_orders=7826,
+                late_share_pct=8.11,
+                on_time_avg_review=4.29,
+                late_avg_review=2.57,
+                observed_review_gap=1.72,
+                baseline_csat=4.16,
+            )
+
+        now = time.monotonic()
+        with _OLIST_LOCK:
+            cached = _OLIST_CACHE.get("__scenario_baseline__")
+            if cached and (now - cached[0]) < FORECAST_RULES["cache_ttl_seconds"]:
+                return cached[1]
+
+        sql = text("""
+            SELECT
+                SUM(CASE WHEN o.order_delivered_customer_date <= o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS on_time_orders,
+                SUM(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS late_orders,
+                AVG(CASE WHEN o.order_delivered_customer_date <= o.order_estimated_delivery_date THEN r.review_score END) AS on_time_avg_review,
+                AVG(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN r.review_score END) AS late_avg_review,
+                AVG(r.review_score) AS baseline_csat
+            FROM insightforge.orders o
+            JOIN insightforge.order_reviews r ON o.order_id = r.order_id
+            WHERE o.order_status = 'delivered'
+              AND o.order_delivered_customer_date IS NOT NULL
+              AND o.order_estimated_delivery_date IS NOT NULL
+        """)
+        try:
+            with readonly_engine.connect() as conn:
+                row = conn.execute(sql).mappings().first()
+        except Exception as e:
+            assert_database_available(e, "scenario_baseline")
+            raise
+
+        on_time = int((row or {}).get("on_time_orders") or 0)
+        late = int((row or {}).get("late_orders") or 0)
+        total = max(1, on_time + late)
+        on_time_avg = round(float((row or {}).get("on_time_avg_review") or 0.0), 2)
+        late_avg = round(float((row or {}).get("late_avg_review") or 0.0), 2)
+        base_csat = round(float((row or {}).get("baseline_csat") or 0.0), 2)
+
+        resp = ScenarioBaselineResponse(
+            on_time_orders=on_time,
+            late_orders=late,
+            late_share_pct=round((late / total) * 100.0, 2),
+            on_time_avg_review=on_time_avg,
+            late_avg_review=late_avg,
+            observed_review_gap=round(on_time_avg - late_avg, 2),
+            baseline_csat=base_csat,
+        )
+        with _OLIST_LOCK:
+            _OLIST_CACHE["__scenario_baseline__"] = (now, resp)
+        return resp
 
     @classmethod
     def forecast(cls, metric: Optional[str] = None, horizon: Optional[int] = None, exclude_anomalies: bool = False) -> ForecastResponse:

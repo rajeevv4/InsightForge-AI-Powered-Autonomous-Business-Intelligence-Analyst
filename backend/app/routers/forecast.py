@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from backend.app.config import settings
 from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 from backend.app.limiter import limiter
-from backend.app.schemas.forecast import ForecastResponse
+from backend.app.schemas.forecast import ForecastResponse, ScenarioBaselineResponse
 from backend.app.services.dataset_file_parser import FileValidationError
 from backend.app.services.forecast_service import OlistForecastService
 
@@ -35,3 +35,22 @@ def get_forecast(
     except Exception as e:
         logger.error(f"Unexpected error in GET /forecast: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to build forecast")
+
+
+@router.get(
+    "/scenario-baseline",
+    response_model=ScenarioBaselineResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Observed delivery SLA vs review score gap for assumption-based scenario analysis",
+)
+@limiter.limit(settings.RATE_LIMIT_FORECAST)
+def get_scenario_baseline(request: Request) -> ScenarioBaselineResponse:
+    try:
+        return OlistForecastService.scenario_baseline()
+    except QueryTimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Query timed out, please retry")
+    except DatabaseUnavailableError:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+    except Exception as e:
+        logger.error(f"Unexpected error in GET /forecast/scenario-baseline: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to compute scenario baseline")

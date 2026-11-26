@@ -37,6 +37,7 @@ import {
   WorkspaceAnomalyScanResponse,
   AnomalyExplanationResponse,
   ForecastResponse,
+  ScenarioBaselineResponse,
   ReportResponse
 } from '../types/api';
 
@@ -376,6 +377,11 @@ export const api = {
     };
     if (opts.metric) params.metric = opts.metric;
     const res = await client.get<ForecastResponse>('/forecast', { params, timeout: 60000 });
+    return res.data;
+  },
+
+  getScenarioBaseline: async (): Promise<ScenarioBaselineResponse> => {
+    const res = await client.get<ScenarioBaselineResponse>('/forecast/scenario-baseline', { timeout: 30000 });
     return res.data;
   },
 

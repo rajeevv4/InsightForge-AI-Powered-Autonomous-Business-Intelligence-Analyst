@@ -782,6 +782,17 @@ export interface ForecastResponse {
   cached: boolean;
 }
 
+export interface ScenarioBaselineResponse {
+  on_time_orders: number;
+  late_orders: number;
+  late_share_pct: number;
+  on_time_avg_review: number;
+  late_avg_review: number;
+  observed_review_gap: number;
+  baseline_csat: number;
+  disclaimer: string;
+}
+
 // ---------------------------------------------------------------------------
 // One-click report (deterministic templates; PDF via the same endpoint, format=pdf)
 // ---------------------------------------------------------------------------

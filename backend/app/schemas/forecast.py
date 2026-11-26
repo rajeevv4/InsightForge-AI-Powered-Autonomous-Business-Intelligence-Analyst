@@ -66,3 +66,14 @@ class ForecastResponse(BaseModel):
     section_errors: Dict[str, str] = Field(default_factory=dict)
     generated_at: Optional[datetime] = None
     cached: bool = False
+
+
+class ScenarioBaselineResponse(BaseModel):
+    on_time_orders: int
+    late_orders: int
+    late_share_pct: float
+    on_time_avg_review: float
+    late_avg_review: float
+    observed_review_gap: float
+    baseline_csat: float
+    disclaimer: str = "Based on observed historical association between delivery SLA and review scores, not proven causation."
