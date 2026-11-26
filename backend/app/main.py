@@ -9,7 +9,7 @@ from backend.app.config import settings
 from backend.app.exceptions import DatabaseUnavailableError, QueryTimeoutError
 from backend.app.limiter import limiter
 from backend.app.routers import health, kpis, analytics, data_quality, ai, anomalies, voice, datasets
-from backend.app.routers import forecast, report
+from backend.app.routers import forecast, report, briefing
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ app.include_router(voice.router, prefix=settings.API_PREFIX)
 app.include_router(datasets.router, prefix=settings.API_PREFIX)
 app.include_router(forecast.router, prefix=settings.API_PREFIX)
 app.include_router(report.router, prefix=settings.API_PREFIX)
+app.include_router(briefing.router, prefix=settings.API_PREFIX)
 
 @app.on_event("startup")
 def _warm_data_quality_cache():

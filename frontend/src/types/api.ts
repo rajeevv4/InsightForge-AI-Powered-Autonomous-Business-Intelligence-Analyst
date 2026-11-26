@@ -793,6 +793,35 @@ export interface ScenarioBaselineResponse {
   disclaimer: string;
 }
 
+export interface BriefingThresholds {
+  max_late_delivery_pct: number;
+  min_csat: number;
+  min_mom_revenue_pct: number;
+  max_high_anomalies: number;
+}
+
+export interface ThresholdAlert {
+  id: string;
+  label: string;
+  metric: string;
+  current_value: number;
+  threshold: number;
+  operator: string;
+  triggered: boolean;
+  severity: 'ok' | 'warning' | 'critical' | string;
+  message: string;
+}
+
+export interface MorningBriefingResponse {
+  headline: string;
+  bullets: string[];
+  alerts: ThresholdAlert[];
+  triggered_count: number;
+  thresholds: BriefingThresholds;
+  generated_at: string;
+  cached: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // One-click report (deterministic templates; PDF via the same endpoint, format=pdf)
 // ---------------------------------------------------------------------------

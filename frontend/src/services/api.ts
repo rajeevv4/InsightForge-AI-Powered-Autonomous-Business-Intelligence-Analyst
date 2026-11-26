@@ -38,6 +38,8 @@ import {
   AnomalyExplanationResponse,
   ForecastResponse,
   ScenarioBaselineResponse,
+  BriefingThresholds,
+  MorningBriefingResponse,
   ReportResponse
 } from '../types/api';
 
@@ -382,6 +384,15 @@ export const api = {
 
   getScenarioBaseline: async (): Promise<ScenarioBaselineResponse> => {
     const res = await client.get<ScenarioBaselineResponse>('/forecast/scenario-baseline', { timeout: 30000 });
+    return res.data;
+  },
+
+  getMorningBriefing: async (thresholds?: BriefingThresholds): Promise<MorningBriefingResponse> => {
+    if (thresholds) {
+      const res = await client.post<MorningBriefingResponse>('/briefing', thresholds, { timeout: 45000 });
+      return res.data;
+    }
+    const res = await client.get<MorningBriefingResponse>('/briefing', { timeout: 45000 });
     return res.data;
   },
 

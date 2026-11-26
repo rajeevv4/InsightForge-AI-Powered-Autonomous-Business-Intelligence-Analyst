@@ -21,6 +21,7 @@ import {
 } from '../types/api';
 
 import { KpiCard } from '../components/KpiCard';
+import { MorningBriefingCard } from '../components/MorningBriefingCard';
 import { formatMoney, formatNumber } from '../lib/format';
 import { RevenueTrendChart } from '../components/RevenueTrendChart';
 import { CategoryChart } from '../components/CategoryChart';
@@ -158,6 +159,9 @@ export const OverviewPage: React.FC = () => {
         </button>
         </div>
       </div>
+
+      {/* Morning Briefing & Deterministic Threshold Alerts */}
+      <MorningBriefingCard />
 
       {/* Executive KPI Cards Grid */}
       <section className="space-y-3">
