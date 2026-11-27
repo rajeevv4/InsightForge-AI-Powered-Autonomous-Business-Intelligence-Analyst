@@ -464,7 +464,9 @@ export const AskInsightForge: React.FC = () => {
     } catch (err: any) {
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
-      if (status === 429) {
+      if (err?.code === 'ECONNABORTED' || String(err?.message || '').toLowerCase().includes('timeout')) {
+        setVoiceNotice('Voice transcription took too long and timed out. Please try a shorter clip or type your question.');
+      } else if (status === 429) {
         setVoiceNotice('Gemini API quota reached. Please type your question directly.');
       } else if (status === 503) {
         setVoiceNotice(detail || 'AI voice service is temporarily unavailable. Please type your question.');

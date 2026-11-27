@@ -157,7 +157,7 @@ export const api = {
       headers: {
         'Content-Type': undefined,
       },
-      timeout: 30000,
+      timeout: 90000,
     });
     return res.data;
   },
